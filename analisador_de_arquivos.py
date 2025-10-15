@@ -491,7 +491,7 @@ MENU = """
 4) Perguntar sobre um arquivo
 5) Consultas e gráficos prontos (3 exemplos)
 6) Rodar consulta SQL customizada + gráfico
-0) Sair
+7) Sair
 > """
 
 
@@ -566,7 +566,7 @@ def menu():
                     run_and_plot(sess, sql, desc, chart)
                 except Exception as e:
                     print(f"[ERRO] {e}")
-        elif op == "0":
+        elif op == "7":
             print("Até mais!")
             break
         else:
