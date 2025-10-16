@@ -83,7 +83,7 @@ pip install -r requirements.txt
 ### Passo 4: Criar o arquivo `.env`
 
 ```bash
-DATABASE_URL=postgresql+psycopg2://usuario:senha@localhost:5432/analisador
+DATABASE_URL=postgresql+psycopg2://usuario:senha@localhost:5432/analisador-de-arquivos
 GROQ_API_KEY=sua_chave_aqui
 GROQ_API_MODEL=llama-3.3-70b-versatile
 ```
