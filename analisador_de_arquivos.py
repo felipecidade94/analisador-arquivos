@@ -321,18 +321,29 @@ def answer_question(sess, arquivo_id: int, pergunta_texto: str) -> str:
     if not arq or not arq.conteudo_extraido:
         raise ValueError("Arquivo ou conteúdo não encontrado para este ID.")
 
-    # registrar pergunta
+    # Registrar pergunta
     q = Pergunta(arquivo_id=arquivo_id, texto=pergunta_texto)
     sess.add(q)
     sess.commit()
 
     start = time.time()
 
+    # Recuperar o índice FAISS correto
+    embedding_meta = sess.query(Embedding).join(ConteudoExtraido).filter(
+        ConteudoExtraido.arquivo_id == arquivo_id
+    ).one_or_none()
+
+    if not embedding_meta or not os.path.exists(embedding_meta.index_path):
+        vs, _ = build_or_load_index_for_file(sess, arq.conteudo_extraido)
+    else:
+        emb = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+        vs = FAISS.load_local(embedding_meta.index_path, emb, allow_dangerous_deserialization=True)
+
     # Recuperação semântica
-    vs, _ = build_or_load_index_for_file(sess, arq.conteudo_extraido)
     retrieved_docs = vs.similarity_search(pergunta_texto, k=5)
     context = "\n\n".join(d.page_content for d in retrieved_docs)
 
+    # Caso não tenha chave de API
     if not GROQ_API_KEY:
         resposta_texto = "[GROQ_API_KEY ausente] Contexto recuperado:\n" + context[:1000]
         elapsed = time.time() - start
@@ -341,6 +352,7 @@ def answer_question(sess, arquivo_id: int, pergunta_texto: str) -> str:
         sess.commit()
         return resposta_texto
 
+    # Geração de resposta pela IA
     llm = ChatGroq(api_key=GROQ_API_KEY, model_name=GROQ_API_MODEL)
     prompt = ChatPromptTemplate.from_messages([
         ("system", SYSTEM_PROMPT),
@@ -356,6 +368,7 @@ def answer_question(sess, arquivo_id: int, pergunta_texto: str) -> str:
     sess.add(r)
     sess.commit()
     return resposta_texto
+
 
 
 # ------------------------------------------------------------
@@ -595,6 +608,7 @@ def menu():
         elif op == "6":
             with SessionLocal() as sess:
                 sql = input("SQL (apenas SELECT): ")
+                desc = input('Faça uma breve descrição da consulta: ')
                 try:
                     df = pd.read_sql_query(sql, con=engine)
                     filename = f"consulta_{int(time.time())}.xlsx"
