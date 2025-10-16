@@ -1,28 +1,5 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Sistema Inteligente de Análise de Arquivos
------------------------------------------
-
-• Faz upload de arquivos (PDF, DOCX, XLSX, CSV, TXT), guarda o binário em PostgreSQL (BYTEA)
-• Extrai conteúdo textual (quando aplicável) e indexa em embeddings (FAISS + sentence-transformers)
-• Usa Groq (ChatGroq via LangChain) para responder perguntas com contexto recuperado por similaridade
-• Permite rodar consultas SQL de agregação sobre tabelas do próprio sistema e gerar gráficos (PNG)
-• Mantém logs, perguntas e respostas, gráficos e metadados no banco (10 entidades)
-
-Requisitos: Python 3.10+
-
-Instale dependências (exemplo):
-    pip install python-dotenv sqlalchemy psycopg2-binary langchain groq langchain-groq
-    pip install sentence-transformers faiss-cpu numpy pandas matplotlib python-docx pymupdf openpyxl
-
-Config .env (exemplo):
-    DATABASE_URL=postgresql+psycopg2://usuario:senha@localhost:5432/analisador
-    GROQ_API_KEY=...  # sua chave
-
-Observação: As entidades e necessidade de gráficos/consultas se alinham ao trabalho final DEC7588 (UFSC).
-"""
-
 from __future__ import annotations
 import os
 import io
@@ -71,6 +48,7 @@ import matplotlib.pyplot as plt
 load_dotenv()
 DATABASE_URL = os.getenv("DATABASE_URL")
 GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_API_MODEL = os.getenv("GROQ_API_MODEL")
 
 if not DATABASE_URL:
     raise RuntimeError("Defina DATABASE_URL no .env (ex: postgresql+psycopg2://user:pass@host:5432/db)")
@@ -87,8 +65,9 @@ Base = declarative_base()
 class TipoArquivo(Base):
     __tablename__ = "tipo_arquivo"
     id = Column(Integer, primary_key=True)
-    nome = Column(String(50), nullable=False, unique=True)  # pdf, docx, xlsx, csv, txt
+    nome = Column(String(50), nullable=False, unique=True)
     arquivos = relationship("Arquivo", back_populates="tipo")
+
 
 class Arquivo(Base):
     __tablename__ = "arquivo"
@@ -96,15 +75,18 @@ class Arquivo(Base):
     nome = Column(String(255))
     tipo_id = Column(Integer, ForeignKey("tipo_arquivo.id"))
     data_upload = Column(DateTime, default=func.now())
-    conteudo = Column(LargeBinary)  # BYTEA no Postgres
+    conteudo = Column(LargeBinary)
     tamanho = Column(Integer)
     hash_sha256 = Column(String(64), index=True)
+
 
     tipo = relationship("TipoArquivo", back_populates="arquivos")
     conteudo_extraido = relationship("ConteudoExtraido", back_populates="arquivo", uselist=False)
     perguntas = relationship("Pergunta", back_populates="arquivo")
     consultas = relationship("ConsultaSQL", back_populates="arquivo")
     logs = relationship("LogSistema", back_populates="arquivo")
+    resumo = relationship("Resumo", back_populates="arquivo", uselist=False)
+
 
 class ConteudoExtraido(Base):
     __tablename__ = "conteudo_extraido"
@@ -112,40 +94,34 @@ class ConteudoExtraido(Base):
     arquivo_id = Column(Integer, ForeignKey("arquivo.id"), unique=True)
     texto = Column(Text)
 
+
     arquivo = relationship("Arquivo", back_populates="conteudo_extraido")
     embeddings = relationship("Embedding", back_populates="conteudo")
+
 
 class Embedding(Base):
     __tablename__ = "embedding"
     id = Column(Integer, primary_key=True)
     conteudo_id = Column(Integer, ForeignKey("conteudo_extraido.id"))
-    
-    # Guardamos o índice FAISS externamente em disco por arquivo
-    # Aqui persistimos metadados mínimos
     num_chunks = Column(Integer)
     dim = Column(Integer)
-    index_path = Column(String(255))  # caminho para disco
+    index_path = Column(String(255))
+
 
     conteudo = relationship("ConteudoExtraido", back_populates="embeddings")
 
-class Usuario(Base):
-    __tablename__ = "usuario"
-    id = Column(Integer, primary_key=True)
-    nome = Column(String(200))
-    email = Column(String(200), unique=True)
-    perguntas = relationship("Pergunta", back_populates="usuario")
 
 class Pergunta(Base):
     __tablename__ = "pergunta"
     id = Column(Integer, primary_key=True)
-    usuario_id = Column(Integer, ForeignKey("usuario.id"), nullable=True)
     arquivo_id = Column(Integer, ForeignKey("arquivo.id"))
     texto = Column(Text)
     data = Column(DateTime, default=func.now())
 
-    usuario = relationship("Usuario", back_populates="perguntas")
+
     arquivo = relationship("Arquivo", back_populates="perguntas")
     resposta = relationship("RespostaIA", back_populates="pergunta", uselist=False)
+
 
 class RespostaIA(Base):
     __tablename__ = "resposta_ia"
@@ -156,28 +132,34 @@ class RespostaIA(Base):
     tokens_input = Column(Integer, nullable=True)
     tokens_output = Column(Integer, nullable=True)
 
+
     pergunta = relationship("Pergunta", back_populates="resposta")
+
 
 class ConsultaSQL(Base):
     __tablename__ = "consulta_sql"
     id = Column(Integer, primary_key=True)
-    arquivo_id = Column(Integer, ForeignKey("arquivo.id"), nullable=True)  # opcional: consultas gerais
+    arquivo_id = Column(Integer, ForeignKey("arquivo.id"), nullable=True)
     sql = Column(Text)
     descricao = Column(Text)
     data = Column(DateTime, default=func.now())
 
+
     arquivo = relationship("Arquivo", back_populates="consultas")
     graficos = relationship("Grafico", back_populates="consulta")
+
 
 class Grafico(Base):
     __tablename__ = "grafico"
     id = Column(Integer, primary_key=True)
     consulta_id = Column(Integer, ForeignKey("consulta_sql.id"))
-    tipo = Column(String(50))  # barras, linhas, pizza, etc.
-    dados = Column(JSON)       # snapshot dos dados
-    imagem_path = Column(String(255))  # arquivo .png salvo
+    tipo = Column(String(50))
+    dados = Column(JSON)
+    imagem_path = Column(String(255))
+
 
     consulta = relationship("ConsultaSQL", back_populates="graficos")
+
 
 class LogSistema(Base):
     __tablename__ = "log_sistema"
@@ -187,18 +169,34 @@ class LogSistema(Base):
     detalhe = Column(Text)
     data = Column(DateTime, default=func.now())
 
+
     arquivo = relationship("Arquivo", back_populates="logs")
+
+
+class Resumo(Base):
+    __tablename__ = "resumo"
+    id = Column(Integer, primary_key=True)
+    arquivo_id = Column(Integer, ForeignKey("arquivo.id"), unique=True)
+    texto = Column(Text)
+    data = Column(DateTime, default=func.now())
+
+
+    arquivo = relationship("Arquivo", back_populates="resumo")
+
+
 
 # ------------------------------------------------------------
 # Utilitários
 # ------------------------------------------------------------
 CHUNK_SIZE = 1200
 CHUNK_OVERLAP = 150
-EMBEDDING_MODEL = os.getenv("GROQ_API_MODEL")
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"  # rápido e bom
 INDEX_DIR = "indices_faiss"
 CHART_DIR = "charts"
+RESULT_CONSULTA_DIR = 'consultas'
 os.makedirs(INDEX_DIR, exist_ok=True)
 os.makedirs(CHART_DIR, exist_ok=True)
+os.makedirs(RESULT_CONSULTA_DIR, exist_ok=True)
 
 
 def sha256_bytes(b: bytes) -> str:
@@ -318,13 +316,13 @@ SYSTEM_PROMPT = (
     "Seja conciso e cite trechos relevantes do contexto quando possível."
 )
 
-def answer_question(sess, arquivo_id: int, pergunta_texto: str, usuario_id: Optional[int] = None) -> str:
-    arq = sess.query(Arquivo).get(arquivo_id)
+def answer_question(sess, arquivo_id: int, pergunta_texto: str) -> str:
+    arq = sess.get(Arquivo, arquivo_id)
     if not arq or not arq.conteudo_extraido:
         raise ValueError("Arquivo ou conteúdo não encontrado para este ID.")
 
     # registrar pergunta
-    q = Pergunta(usuario_id=usuario_id, arquivo_id=arquivo_id, texto=pergunta_texto)
+    q = Pergunta(arquivo_id=arquivo_id, texto=pergunta_texto)
     sess.add(q)
     sess.commit()
 
@@ -343,7 +341,7 @@ def answer_question(sess, arquivo_id: int, pergunta_texto: str, usuario_id: Opti
         sess.commit()
         return resposta_texto
 
-    llm = ChatGroq(api_key=GROQ_API_KEY, model_name="llama-3.1-70b-versatile")
+    llm = ChatGroq(api_key=GROQ_API_KEY, model_name=GROQ_API_MODEL)
     prompt = ChatPromptTemplate.from_messages([
         ("system", SYSTEM_PROMPT),
         ("human", "Contexto:\n{context}\n\nPergunta: {question}")
@@ -359,11 +357,12 @@ def answer_question(sess, arquivo_id: int, pergunta_texto: str, usuario_id: Opti
     sess.commit()
     return resposta_texto
 
+
 # ------------------------------------------------------------
 # Upload e processamento
 # ------------------------------------------------------------
 
-def upload_file(sess, filepath: str, usuario_id: Optional[int] = None) -> int:
+def upload_file(sess, filepath: str) -> int:
     with open(filepath, "rb") as f:
         data = f.read()
     nome = os.path.basename(filepath)
@@ -371,7 +370,7 @@ def upload_file(sess, filepath: str, usuario_id: Optional[int] = None) -> int:
     tipo = ensure_tipo(sess, tipo_nome)
     h = sha256_bytes(data)
 
-    # evitar duplicatas por hash
+    # Evitar duplicatas por hash
     existente = sess.query(Arquivo).filter_by(hash_sha256=h).one_or_none()
     if existente:
         sess.add(LogSistema(arquivo_id=existente.id, acao="upload_duplicado", detalhe=nome))
@@ -379,11 +378,18 @@ def upload_file(sess, filepath: str, usuario_id: Optional[int] = None) -> int:
         print(f"[INFO] Arquivo já existe (ID={existente.id}). Pulando upload.")
         return existente.id
 
-    arq = Arquivo(nome=nome, tipo_id=tipo.id, conteudo=data, tamanho=len(data), hash_sha256=h)
+    # Criação do registro do arquivo
+    arq = Arquivo(
+        nome=nome,
+        tipo_id=tipo.id,
+        conteudo=data,
+        tamanho=len(data),
+        hash_sha256=h
+    )
     sess.add(arq)
     sess.commit()
 
-    # Extrair conteúdo
+    # Extração do conteúdo
     try:
         texto = extract_content_by_type(tipo.nome, data)
     except Exception as e:
@@ -396,7 +402,7 @@ def upload_file(sess, filepath: str, usuario_id: Optional[int] = None) -> int:
     sess.add(c)
     sess.commit()
 
-    # Indexar
+    # Indexação
     try:
         build_or_load_index_for_file(sess, c)
     except Exception as e:
@@ -404,10 +410,39 @@ def upload_file(sess, filepath: str, usuario_id: Optional[int] = None) -> int:
         sess.commit()
         print(f"[ERRO] Indexação falhou: {e}")
 
+    # Geração do resumo automático
+    resumo_texto = ""
+    try:
+        if texto.strip():
+            if GROQ_API_KEY:
+                llm = ChatGroq(api_key=GROQ_API_KEY, model_name=GROQ_API_MODEL)
+                prompt = ChatPromptTemplate.from_messages([
+                    ("system", "Resuma o conteúdo a seguir de forma objetiva e em português claro."),
+                    ("human", texto[:4000])  # limite de tokens para evitar truncamento
+                ])
+                chain = prompt | llm
+                resp = chain.invoke({})
+                resumo_texto = resp.content if hasattr(resp, "content") else str(resp)
+            else:
+                resumo_texto = texto[:500] + "..." if len(texto) > 500 else texto
+        else:
+            resumo_texto = "[Sem conteúdo extraído para resumir]"
+    except Exception as e:
+        resumo_texto = f"[Erro ao gerar resumo: {e}]"
+        sess.add(LogSistema(arquivo_id=arq.id, acao="erro_resumo", detalhe=str(e)))
+        sess.commit()
+        print(f"[ERRO] Resumo falhou: {e}")
+
+    # Salvar resumo na tabela
+    r = Resumo(arquivo_id=arq.id, texto=resumo_texto)
+    sess.add(r)
+    sess.add(LogSistema(arquivo_id=arq.id, acao="resumo_gerado", detalhe=f"{len(resumo_texto)} caracteres"))
     sess.add(LogSistema(arquivo_id=arq.id, acao="upload_ok", detalhe=nome))
     sess.commit()
-    print(f"[OK] Upload e processamento concluídos. ID={arq.id}")
+
+    print(f"[OK] Upload, processamento e resumo concluídos. ID={arq.id}")
     return arq.id
+
 
 # ------------------------------------------------------------
 # Consultas + gráficos
@@ -490,8 +525,8 @@ MENU = """
 3) Upload de arquivo
 4) Perguntar sobre um arquivo
 5) Consultas e gráficos prontos (3 exemplos)
-6) Rodar consulta SQL customizada + gráfico
-7) Sair
+6) Rodar consulta SQL customizada
+0) Sair
 > """
 
 
@@ -560,13 +595,15 @@ def menu():
         elif op == "6":
             with SessionLocal() as sess:
                 sql = input("SQL (apenas SELECT): ")
-                chart = input("Tipo de gráfico [barras|linhas|pizza] (padrão: barras): ").strip().lower() or "barras"
-                desc = input("Descrição curta da consulta: ")
                 try:
-                    run_and_plot(sess, sql, desc, chart)
+                    df = pd.read_sql_query(sql, con=engine)
+                    filename = f"consulta_{int(time.time())}.xlsx"
+                    path = os.path.join(RESULT_CONSULTA_DIR, filename)
+                    df.to_excel(path, index=False)
+                    print(f"[OK] Consulta salva em {path}")
                 except Exception as e:
                     print(f"[ERRO] {e}")
-        elif op == "7":
+        elif op == "0":
             print("Até mais!")
             break
         else:
