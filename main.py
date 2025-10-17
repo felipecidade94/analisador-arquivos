@@ -332,9 +332,13 @@ def build_or_load_index_for_file(sess, conteudo: ConteudoExtraido) -> Tuple[FAIS
 # Perguntas e respostas (Groq + RAG)
 # ------------------------------------------------------------
 SYSTEM_PROMPT = (
-    '''Você é um assistente que responde com base ESTRITA no contexto fornecido. 
-    Se a resposta não estiver no contexto, diga claramente que não encontrou. 
-    Seja conciso e cite trechos relevantes do contexto quando possível.'''
+    '''Você é um assistente que responde com base no arquivo fornecido, de forma amigável. Você pode dar sua opnião APENAS quando perguntado.
+    Seja consiso nas respostas e traga pontes importantes, quando possível.
+    Se não souber a resposta, diga claramente que não sabe.
+    Se mostre prestativo, perguntando se o usuário quer mais informações, após cada resposta sua.
+    O formato de resposta deve sem em markdown, porém não use * nem # nas
+    respostas. NÃO invente informações que não sabe.
+    '''
 )
 
 def answer_question(sess, arquivo_id: int, pergunta_texto: str) -> str:
@@ -538,7 +542,7 @@ def create_all():
     with SessionLocal() as sess:
         for nome in ['pdf', 'docx', 'xlsx', 'xls', 'csv', 'txt', 'md']:
             ensure_tipo(sess, nome)
-    print('[OK] Tabelas criadas e tipos iniciais inseridos.')
+    return '[OK] Tabelas criadas e tipos iniciais inseridos.'
 
 
 def drop_all():

@@ -132,6 +132,7 @@ def upload_arquivo():
     caminho = filedialog.askopenfilename(
         title='Selecione um arquivo',
         filetypes=[
+            ('Todos os suportados', '*.pdf; *.docx; *.xlsx; *.xls; *.csv; *.txt; *.md'),
             ('PDF', '*.pdf'),
             ('DOCX', '*.docx'),
             ('Excel', '*.xlsx;*.xls'),
@@ -163,9 +164,8 @@ def perguntar_arquivo():
     sql = 'SELECT a.id, a.nome FROM arquivo a'
     df = pd.read_sql_query(sql, engine)
     lista_arquivos = df['nome'].to_list()
-    lista_ids = df['id'].to_list()
     ttk.Label(janela_id, text="Escolha o arquivo:").pack(pady=10)
-    combo_aquivo = ttk.Combobox(janela_id, width=20, values=lista_arquivos)
+    combo_aquivo = ttk.Combobox(janela_id, width=80, values=lista_arquivos)
     combo_aquivo.pack(pady=5)
     
     def confirmar_id():
