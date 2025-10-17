@@ -96,7 +96,6 @@ class ConteudoExtraido(Base):
     arquivo_id = Column(Integer, ForeignKey('arquivo.id'), unique=True)
     texto = Column(Text)
 
-
     arquivo = relationship('Arquivo', back_populates='conteudo_extraido')
     embeddings = relationship('Embedding', back_populates='conteudo')
 
@@ -109,7 +108,6 @@ class Embedding(Base):
     dim = Column(Integer)
     index_path = Column(String(255))
 
-
     conteudo = relationship('ConteudoExtraido', back_populates='embeddings')
 
 
@@ -119,7 +117,6 @@ class Pergunta(Base):
     arquivo_id = Column(Integer, ForeignKey('arquivo.id'))
     texto = Column(Text)
     data = Column(DateTime, default=func.now())
-
 
     arquivo = relationship('Arquivo', back_populates='perguntas')
     resposta = relationship('RespostaIA', back_populates='pergunta', uselist=False)
@@ -133,7 +130,6 @@ class RespostaIA(Base):
     tempo_execucao = Column(Float)
     tokens_input = Column(Integer, nullable=True)
     tokens_output = Column(Integer, nullable=True)
-
 
     pergunta = relationship('Pergunta', back_populates='resposta')
 
@@ -160,7 +156,6 @@ class ResultadoConsulta(Base):
     consulta = relationship('ConsultaSQL', back_populates='resultado')
 
 
-
 class LogSistema(Base):
     __tablename__ = 'log_sistema'
     id = Column(Integer, primary_key=True)
@@ -182,7 +177,6 @@ class Resumo(Base):
 
 
     arquivo = relationship('Arquivo', back_populates='resumo')
-
 
 
 # ------------------------------------------------------------
@@ -239,7 +233,7 @@ def extract_text_from_docx(data: bytes) -> str:
     bio = io.BytesIO(data)
     d = docx.Document(bio)
     return '\n'.join(p.text for p in d.paragraphs).strip()
-
+    
 
 def extract_text_from_csv(data: bytes) -> str:
     bio = io.BytesIO(data)
@@ -284,7 +278,6 @@ def extract_text_from_md(data: bytes) -> str:
         text = "\n".join(line for line in lines if line)
 
         return text.strip()
-
 
 
 def extract_content_by_type(tipo: str, data: bytes) -> str:
@@ -339,9 +332,9 @@ def build_or_load_index_for_file(sess, conteudo: ConteudoExtraido) -> Tuple[FAIS
 # Perguntas e respostas (Groq + RAG)
 # ------------------------------------------------------------
 SYSTEM_PROMPT = (
-    'Você é um assistente que responde com base ESTRITA no contexto fornecido. '
-    'Se a resposta não estiver no contexto, diga claramente que não encontrou. '
-    'Seja conciso e cite trechos relevantes do contexto quando possível.'
+    '''Você é um assistente que responde com base ESTRITA no contexto fornecido. 
+    Se a resposta não estiver no contexto, diga claramente que não encontrou. 
+    Seja conciso e cite trechos relevantes do contexto quando possível.'''
 )
 
 def answer_question(sess, arquivo_id: int, pergunta_texto: str) -> str:
@@ -396,7 +389,6 @@ def answer_question(sess, arquivo_id: int, pergunta_texto: str) -> str:
     sess.add(r)
     sess.commit()
     return resposta_texto
-
 
 
 # ------------------------------------------------------------
@@ -549,14 +541,11 @@ def create_all():
     print('[OK] Tabelas criadas e tipos iniciais inseridos.')
 
 
-
 def drop_all():
     Base.metadata.drop_all(engine)
     print('[OK] Todas as tabelas foram removidas.')
 
-# ------------------------------------------------------------
-# CLI simples
-# ------------------------------------------------------------
+
 MENU = '''
 ============== MENU ==============
 1) Criar tabelas
@@ -596,44 +585,44 @@ def menu():
             except ValueError:
                 print('ID inválido')
                 continue
-            pergunta = input('Pergunta: [voltar retorna ao menu]')
-            while pergunta != 'menu':
+            pergunta = input('Pergunta: [voltar retorna ao menu] ')
+            while pergunta != 'voltar':
                 with SessionLocal() as sess:
                     try:
                         resp = answer_question(sess, arquivo_id, pergunta)
                         print('\n===== RESPOSTA IA =====\n' + resp + '\n=======================\n')
                     except Exception as e:
                         print(f'[ERRO] {e}')
-                pergunta = input('Pergunta: [voltar retorna ao menu]')
+                    pergunta = input('Pergunta: [voltar retorna ao menu] ')
         elif op == '5':
             print("\n[INFO] Executando consultas e gerando gráficos prontos...")
 
             # Consulta 1: quantidade de arquivos por tipo
             sql1 = (
-                'SELECT t.nome AS tipo, COUNT(a.id) AS qtde '
-                'FROM tipo_arquivo t LEFT JOIN arquivo a ON a.tipo_id = t.id '
-                'GROUP BY t.nome ORDER BY qtde DESC'
+                '''SELECT t.nome AS tipo, COUNT(a.id) AS qtde 
+                FROM tipo_arquivo t LEFT JOIN arquivo a ON a.tipo_id = t.id 
+                GROUP BY t.nome ORDER BY qtde DESC'''
             )
             run_and_plot(titulo='QTDE arquivos x tipo', eixo_x='Tipo', eixo_y='Quantidade' ,sql=sql1,descricao='Quantidade de arquivos por tipo', chart_type='barras')
 
             # Consulta 2: número de perguntas por arquivo
             sql2 = (
-                'SELECT a.nome AS arquivo, COUNT(p.id) AS perguntas '
-                'FROM arquivo a LEFT JOIN pergunta p ON p.arquivo_id = a.id '
-                'GROUP BY a.nome ORDER BY perguntas DESC'
+                '''SELECT a.nome AS arquivo, COUNT(p.id) AS perguntas 
+                FROM arquivo a LEFT JOIN pergunta p ON p.arquivo_id = a.id 
+                GROUP BY a.nome ORDER BY perguntas DESC'''
             )
             run_and_plot(titulo='Número de perguntas x arquivo', eixo_x='Arquivo',eixo_y='Número de perguntas',sql=sql2, descricao='Perguntas por arquivo', chart_type='barras')
 
             # Consulta 3: tempo médio de resposta por tipo de arquivo
             sql3 = (
-                'SELECT t.nome AS tipo, COALESCE(AVG(r.tempo_execucao),0) AS tempo_medio_s '
-                'FROM tipo_arquivo t '
-                'LEFT JOIN arquivo a ON a.tipo_id = t.id '
-                'LEFT JOIN pergunta p ON p.arquivo_id = a.id '
-                'LEFT JOIN resposta_ia r ON r.pergunta_id = p.id '
-                'GROUP BY t.nome ORDER BY tempo_medio_s DESC'
+                '''SELECT t.nome AS tipo, COALESCE(AVG(r.tempo_execucao),0) AS tempo_medio_s 
+                FROM tipo_arquivo t 
+                LEFT JOIN arquivo a ON a.tipo_id = t.id 
+                LEFT JOIN pergunta p ON p.arquivo_id = a.id 
+                LEFT JOIN resposta_ia r ON r.pergunta_id = p.id 
+                GROUP BY t.nome ORDER BY tempo_medio_s DESC'''
             )
-            run_and_plot(titulo='Tempo médio de resposta por tipo de arquivo',eixo_x='Tipo', eixo_y='Tempo (s)',sql=sql3, descricao='Tempo médio de resposta por tipo', chart_type='linhas')
+            run_and_plot(titulo='Tempo médio de resposta por tipo de arquivo',eixo_x='Tipo', eixo_y='Tempo (s)',sql=sql3, descricao='Tempo médio (s)', chart_type='linhas')
 
             print("\n[OK] Consultas e gráficos prontos concluídos.\n")
 
@@ -644,13 +633,12 @@ def menu():
             # ------------------------------------------------------------
             with SessionLocal() as sess:
                 sql = input('SQL (apenas SELECT): ').strip()
-                descricao = input('Descrição breve da consulta: ').strip()
 
                 try:
                     if not sql.lower().startswith('select'):
                         print('[ERRO] Apenas consultas SELECT são permitidas nesta opção.')
                         continue
-
+                    descricao = input('Descrição breve da consulta: ').strip()
                     # Cria registro da consulta
                     cons = ConsultaSQL(sql=sql, descricao=descricao)
                     sess.add(cons)
