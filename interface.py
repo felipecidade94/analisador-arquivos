@@ -8,7 +8,7 @@ import main as m
 from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy import create_engine
 
-engine = create_engine(os.getenv("DATABASE_URL"))
+engine = create_engine(os.getenv('DATABASE_URL'))
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
@@ -79,7 +79,7 @@ frame_mensagens = tk.Frame(canvas, bg='white')
 canvas.create_window((0, 0), window=frame_mensagens, anchor='nw')
 
 def atualizar_scroll(event=None):
-    canvas.configure(scrollregion=canvas.bbox("all"))
+    canvas.configure(scrollregion=canvas.bbox('all'))
 
 
 frame_mensagens.bind('<Configure>', atualizar_scroll)
@@ -109,7 +109,7 @@ def exibir_mensagem(remetente, texto):
 
     # Atualiza a região rolável
     frame_mensagens.update_idletasks()
-    canvas.configure(scrollregion=canvas.bbox("all"))
+    canvas.configure(scrollregion=canvas.bbox('all'))
     canvas.yview_moveto(1.0)
 
 
@@ -158,12 +158,12 @@ id_arquivo_escolhido = None
 def perguntar_arquivo():
     global id_arquivo_escolhido
     janela_id = tk.Toplevel(janela)
-    janela_id.title("Selecionar arquivo para perguntas")
-    janela_id.geometry("380x160")
+    janela_id.title('Selecionar arquivo para perguntas')
+    janela_id.geometry('380x160')
     sql = 'SELECT a.id, a.nome FROM arquivo a'
     df = pd.read_sql_query(sql, engine)
     lista_arquivos = df['nome'].to_list()
-    ttk.Label(janela_id, text="Escolha o arquivo:").pack(pady=10)
+    ttk.Label(janela_id, text='Escolha o arquivo:').pack(pady=10)
     combo_aquivo = ttk.Combobox(janela_id, width=80, values=lista_arquivos)
     combo_aquivo.pack(pady=5)
     
@@ -172,12 +172,12 @@ def perguntar_arquivo():
         valor = combo_aquivo.get().strip()
         id_arquivo_escolhido = lista_arquivos.index(valor)+1
         if not valor:
-            messagebox.showwarning("Aviso", "É necessário escolher um arquivo.")
+            messagebox.showwarning('Aviso', 'É necessário escolher um arquivo.')
             return
-        exibir_mensagem("Sistema", f"Arquivo {lista_arquivos[id_arquivo_escolhido-1]} selecionado para perguntas.")
+        exibir_mensagem('Sistema', f'Arquivo {lista_arquivos[id_arquivo_escolhido-1]} selecionado para perguntas.')
         janela_id.destroy()
 
-    ttk.Button(janela_id, text="Confirmar", style="Custom.TButton", command=confirmar_id).pack(pady=10)
+    ttk.Button(janela_id, text='Confirmar', style='Custom.TButton', command=confirmar_id).pack(pady=10)
 
 
 # ---------------------------------------------
@@ -189,10 +189,10 @@ def enviar_pergunta():
     if not pergunta:
         return
     if id_arquivo_escolhido is None:
-        messagebox.showwarning("Aviso", "Você precisa selecionar o ID do arquivo antes de perguntar.")
+        messagebox.showwarning('Aviso', 'Você precisa selecionar o ID do arquivo antes de perguntar.')
         return
 
-    exibir_mensagem("Você", pergunta)
+    exibir_mensagem('Você', pergunta)
     entry_enviar.delete(0, tk.END)
 
     janela.update_idletasks()
@@ -200,10 +200,10 @@ def enviar_pergunta():
     with m.SessionLocal() as sess:
         try:
             resposta = m.answer_question(sess, int(id_arquivo_escolhido), pergunta)
-            exibir_mensagem("IA", resposta)
+            exibir_mensagem('IA', resposta)
         except Exception as e:
-            exibir_mensagem("Sistema", f"[ERRO] {e}")
-            messagebox.showerror("Erro", str(e))
+            exibir_mensagem('Sistema', f'[ERRO] {e}')
+            messagebox.showerror('Erro', str(e))
 
 
 def consultas_prontas():
@@ -296,7 +296,7 @@ frame_entry = tk.Frame(frame_chat, bg='white')
 frame_entry.pack(fill='x', padx=10, pady=10)
 entry_enviar = ttk.Entry(frame_entry, font=('Segoe UI', 11))
 entry_enviar.pack(side='left', fill='x', expand=True, padx=(0, 5))
-ttk.Button(frame_entry, text="Enviar", style="Custom.TButton", command=enviar_pergunta).pack(side="right")
+ttk.Button(frame_entry, text='Enviar', style='Custom.TButton', command=enviar_pergunta).pack(side='right')
 
 # ---------------------------------------------
 # EXECUÇÃO
