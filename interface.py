@@ -35,7 +35,7 @@ style.configure(
     foreground='#222',
 )
 style.map('Custom.TButton',
-          background=[('active', '#c2e1ff')])
+        background=[('active', '#c2e1ff')])
 
 style.configure('Custom.TLabel', font=('Segoe UI', 18, 'bold'), background='#f5f6f7')
 

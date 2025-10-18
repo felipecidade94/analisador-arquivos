@@ -1,5 +1,3 @@
-
-# -*- coding: utf-8 -*-
 from __future__ import annotations
 import os
 import io
@@ -34,10 +32,10 @@ except Exception:
     docx = None
 
 # IA / Embeddings / RAG
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
-from langchain_core.prompts import ChatPromptTemplate
+from langchain.prompts import ChatPromptTemplate
 from langchain_groq import ChatGroq
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="langchain")
