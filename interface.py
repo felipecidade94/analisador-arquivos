@@ -142,9 +142,33 @@ def upload_arquivo():
     )
     if not caminho:
         return
-    with m.SessionLocal() as sess:
-        arq_id = m.upload_file(sess, caminho)
-        exibir_mensagem('Sistema', f'Arquivo enviado e processado com sucesso! ID={arq_id}')
+
+    try:
+        with m.SessionLocal() as sess:
+            arq_id = m.upload_file(sess, caminho)
+
+            # Busca todos os logs referentes a esse arquivo
+            logs = (
+                sess.query(m.LogSistema)
+                .filter(m.LogSistema.arquivo_id == arq_id)
+                .order_by(m.LogSistema.data.asc())
+                .all()
+            )
+
+            # Mostra a mensagem principal
+            exibir_mensagem('Sistema', f'Upload concluído. ID do arquivo: {arq_id}')
+
+            # Mostra cada evento registrado no log
+            for log in logs:
+                cor = '#ffebcc' if 'erro' in (log.acao or '').lower() else '#d6f5d6'
+                exibir_mensagem(
+                    'Log',
+                    f"[{log.data.strftime('%H:%M:%S')}] {log.acao.upper()} → {log.detalhe}",
+                )
+
+    except Exception as e:
+        exibir_mensagem('Erro', f'Ocorreu um erro ao enviar o arquivo: {e}')
+
 
 # ---------------------------------------------
 # VARIÁVEIS DE CONTROLE
