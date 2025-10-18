@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from typing import Optional, List, Tuple
 
 from dotenv import load_dotenv
+import shutil
 
 # Banco de dados
 from sqlalchemy import (
@@ -40,7 +41,8 @@ from langchain.prompts import ChatPromptTemplate
 from langchain_groq import ChatGroq
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="langchain")
-
+import markdown2
+import re
 # Visualização
 import matplotlib.pyplot as plt
 
@@ -58,8 +60,8 @@ if not GROQ_API_KEY:
     print('[AVISO] GROQ_API_KEY não definido. Funções de LLM ficarão limitadas até você configurar.')
 
 engine = create_engine(os.getenv("DATABASE_URL"))
-with engine.connect() as conn:
-    print("[OK] Conectado ao banco com sucesso!")
+#with engine.connect() as conn:
+    #print("[OK] Conectado ao banco com sucesso!")
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
@@ -199,10 +201,22 @@ def sha256_bytes(b: bytes) -> str:
 
 def infer_tipo_from_name(name: str) -> str:
     n = name.lower()
-    for ext in ('.pdf', '.docx', '.xlsx','.xls', '.csv', '.txt', '.md'):
-        if n.endswith(ext):
-            return ext[1:]
-    return 'desconhecido'
+    return next(
+        (
+            ext[1:]
+            for ext in (
+                '.pdf',
+                '.docx',
+                '.xlsx',
+                '.xls',
+                '.csv',
+                '.txt',
+                '.md',
+            )
+            if n.endswith(ext)
+        ),
+        'desconhecido',
+    )
 
 
 def ensure_tipo(sess, nome_tipo: str) -> TipoArquivo:
@@ -222,8 +236,7 @@ def extract_text_from_pdf(data: bytes) -> str:
         raise RuntimeError('PyMuPDF não instalado. pip install pymupdf')
     text = []
     with fitz.open(stream=data, filetype='pdf') as doc:
-        for page in doc:
-            text.append(page.get_text())
+        text.extend(page.get_text() for page in doc)
     return '\n'.join(text).strip()
 
 
@@ -246,16 +259,17 @@ def extract_text_from_excel(data: bytes) -> str:
     bio = io.BytesIO(data)
     dfs = pd.read_excel(bio, sheet_name=None)  # todas as abas
     parts = []
-    for sheet, df in dfs.items():
-        parts.append(f"# Sheet: {sheet}\n" + df.to_markdown(index=False))
+    parts.extend(
+        f"# Sheet: {sheet}\n" + df.to_markdown(index=False)
+        for sheet, df in dfs.items()
+    )
     return '\n\n'.join(parts)
 
 
 def extract_text_from_txt(data: bytes) -> str:
     return data.decode('utf-8', errors='ignore')
 
-import markdown2
-import re
+
 
 def extract_text_from_md(data: bytes) -> str:
     try:
@@ -287,7 +301,7 @@ def extract_content_by_type(tipo: str, data: bytes) -> str:
         return extract_text_from_docx(data)
     if tipo == 'csv':
         return extract_text_from_csv(data)
-    if tipo in ['xlsx', 'xls']:
+    if tipo in {'xlsx', 'xls'}:
         return extract_text_from_excel(data)
     if tipo == 'txt':
         return extract_text_from_txt(data)
@@ -537,7 +551,7 @@ def run_and_plot(titulo, eixo_x, eixo_y, sql: str, descricao: str, chart_type: s
 # ------------------------------------------------------------
 
 def create_all():
-    print("[INFO] Criando tabelas no banco de dados...")
+    #print("[INFO] Criando tabelas no banco de dados...")
     Base.metadata.create_all(engine)
     with SessionLocal() as sess:
         for nome in ['pdf', 'docx', 'xlsx', 'xls', 'csv', 'txt', 'md']:
@@ -547,7 +561,13 @@ def create_all():
 
 def drop_all():
     Base.metadata.drop_all(engine)
-    print('[OK] Todas as tabelas foram removidas.')
+    if os.path.exists(INDEX_DIR):
+        shutil.rmtree(INDEX_DIR)
+    if os.path.exists(CHART_DIR):
+        shutil.rmtree(CHART_DIR)
+    if os.path.exists(RESULT_CONSULTA_DIR):
+        shutil.rmtree(RESULT_CONSULTA_DIR)
+    return '[OK] Todas as tabelas foram removidas.'
 
 
 MENU = '''

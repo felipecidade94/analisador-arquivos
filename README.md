@@ -93,7 +93,12 @@ GROQ_API_MODEL=llama-3.3-70b-versatile
 ## 6. Execução do Sistema
 
 ```bash
-python analisador_de_arquivos.py
+python main.py
+```
+Ou
+
+```bash
+python interface.py
 ```
 
 ### Menu Principal
@@ -111,17 +116,18 @@ python analisador_de_arquivos.py
 
 ### Exemplos de uso
 
-* **Upload:** envia um arquivo PDF ou DOCX e gera automaticamente seu resumo.
+* **Upload:** envia um arquivo PDF, DOCX, XLSX, XLS ou MD e gera automaticamente seu resumo.
 * **Perguntar:** faz perguntas sobre o conteúdo do arquivo.
 * **Consultas:** executa consultas SQL no banco e gera gráficos automáticos.
-
+* **Exemplos de gráficos pré-escolhidos:** cria três gráficos.
 ---
 
 ## 7. Estrutura de Pastas
 
 ```
 analisador-arquivos/
-├── analisador_de_arquivos.py
+├── main.py
+├── interface.py
 ├── requirements.txt
 ├── .env
 ├── indices_faiss/

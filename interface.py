@@ -5,7 +5,7 @@ import os
 import pandas as pd
 import time
 import main as m
-from sqlalchemy.orm import declarative_base, sessionmaker, relationship
+from sqlalchemy.orm import declarative_base, sessionmaker
 from sqlalchemy import create_engine
 
 engine = create_engine(os.getenv("DATABASE_URL"))
@@ -113,7 +113,6 @@ def exibir_mensagem(remetente, texto):
     canvas.yview_moveto(1.0)
 
 
-
 exibir_mensagem('Sistema', '[OK] Conectado ao banco com sucesso!')
 # ---------------------------------------------
 # FUNÇÕES DE BOTÕES
@@ -125,8 +124,8 @@ def criar_tabelas():
 
 def remover_tabelas():
     if messagebox.askyesno('Confirmação', 'Tem certeza que deseja remover todas as tabelas?'):
-        m.drop_all()
-        exibir_mensagem('Sistema', 'Todas as tabelas foram removidas.')
+        msg = m.drop_all()
+        exibir_mensagem('Sistema', msg)
 
 def upload_arquivo():
     caminho = filedialog.askopenfilename(
@@ -175,7 +174,7 @@ def perguntar_arquivo():
         if not valor:
             messagebox.showwarning("Aviso", "É necessário escolher um arquivo.")
             return
-        exibir_mensagem("Sistema", f"ID {id_arquivo_escolhido} selecionado para perguntas.")
+        exibir_mensagem("Sistema", f"Arquivo {lista_arquivos[id_arquivo_escolhido-1]} selecionado para perguntas.")
         janela_id.destroy()
 
     ttk.Button(janela_id, text="Confirmar", style="Custom.TButton", command=confirmar_id).pack(pady=10)
@@ -298,8 +297,6 @@ frame_entry.pack(fill='x', padx=10, pady=10)
 entry_enviar = ttk.Entry(frame_entry, font=('Segoe UI', 11))
 entry_enviar.pack(side='left', fill='x', expand=True, padx=(0, 5))
 ttk.Button(frame_entry, text="Enviar", style="Custom.TButton", command=enviar_pergunta).pack(side="right")
-
-
 
 # ---------------------------------------------
 # EXECUÇÃO
