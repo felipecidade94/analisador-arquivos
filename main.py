@@ -88,7 +88,7 @@ class Arquivo(Base):
     tipo = relationship('TipoArquivo', back_populates='arquivos')
     conteudo_extraido = relationship('ConteudoExtraido', back_populates='arquivo', uselist=False)
     perguntas = relationship('Pergunta', back_populates='arquivo')
-    logs = relationship('LogSistema', back_populates='arquivo')
+    logs = relationship('Log', back_populates='arquivo')
     resumo = relationship('Resumo', back_populates='arquivo', uselist=False)
 
 
@@ -158,8 +158,8 @@ class ResultadoConsulta(Base):
     consulta = relationship('ConsultaSQL', back_populates='resultado')
 
 
-class LogSistema(Base):
-    __tablename__ = 'log_sistema'
+class Log(Base):
+    __tablename__ = 'log'
     id = Column(Integer, primary_key=True)
     arquivo_id = Column(Integer, ForeignKey('arquivo.id'), nullable=True)
     acao = Column(String(100))
@@ -424,7 +424,7 @@ def upload_file(sess, filepath: str) -> int:
     # Evitar duplicatas por hash
     existente = sess.query(Arquivo).filter_by(hash_sha256=h).one_or_none()
     if existente:
-        sess.add(LogSistema(arquivo_id=existente.id, acao='upload_duplicado', detalhe=nome))
+        sess.add(Log(arquivo_id=existente.id, acao='upload_duplicado', detalhe=nome))
         sess.commit()
         print(f'[INFO] Arquivo já existe (ID={existente.id}). Pulando upload.')
         return existente.id
@@ -445,7 +445,7 @@ def upload_file(sess, filepath: str) -> int:
         texto = extract_content_by_type(tipo.nome, data)
     except Exception as e:
         texto = ''
-        sess.add(LogSistema(arquivo_id=arq.id, acao='erro_extracao', detalhe=str(e)))
+        sess.add(Log(arquivo_id=arq.id, acao='erro_extracao', detalhe=str(e)))
         sess.commit()
         print(f'[ERRO] Extração falhou: {e}')
 
@@ -457,7 +457,7 @@ def upload_file(sess, filepath: str) -> int:
     try:
         build_or_load_index_for_file(sess, c)
     except Exception as e:
-        sess.add(LogSistema(arquivo_id=arq.id, acao='erro_indexacao', detalhe=str(e)))
+        sess.add(Log(arquivo_id=arq.id, acao='erro_indexacao', detalhe=str(e)))
         sess.commit()
         print(f'[ERRO] Indexação falhou: {e}')
 
@@ -480,15 +480,15 @@ def upload_file(sess, filepath: str) -> int:
             resumo_texto = '[Sem conteúdo extraído para resumir]'
     except Exception as e:
         resumo_texto = f'[Erro ao gerar resumo: {e}]'
-        sess.add(LogSistema(arquivo_id=arq.id, acao='erro_resumo', detalhe=str(e)))
+        sess.add(Log(arquivo_id=arq.id, acao='erro_resumo', detalhe=str(e)))
         sess.commit()
         print(f'[ERRO] Resumo falhou: {e}')
 
     # Salvar resumo na tabela
     r = Resumo(arquivo_id=arq.id, texto=resumo_texto)
     sess.add(r)
-    sess.add(LogSistema(arquivo_id=arq.id, acao='resumo_gerado', detalhe=f'{len(resumo_texto)} caracteres'))
-    sess.add(LogSistema(arquivo_id=arq.id, acao='upload_ok', detalhe=nome))
+    sess.add(Log(arquivo_id=arq.id, acao='resumo_gerado', detalhe=f'{len(resumo_texto)} caracteres'))
+    sess.add(Log(arquivo_id=arq.id, acao='upload_ok', detalhe=nome))
     sess.commit()
 
     print(f'[OK] Upload, processamento e resumo concluídos. ID={arq.id}')
@@ -552,6 +552,9 @@ def run_and_plot(titulo, eixo_x, eixo_y, sql: str, descricao: str, chart_type: s
 
 def create_all():
     #print("[INFO] Criando tabelas no banco de dados...")
+    os.makedirs(INDEX_DIR, exist_ok=True)
+    os.makedirs(CHART_DIR, exist_ok=True)
+    os.makedirs(RESULT_CONSULTA_DIR, exist_ok=True)
     Base.metadata.create_all(engine)
     with SessionLocal() as sess:
         for nome in ['pdf', 'docx', 'xlsx', 'xls', 'csv', 'txt', 'md']:

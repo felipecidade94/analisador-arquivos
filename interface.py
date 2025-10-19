@@ -54,7 +54,7 @@ frame_menu.pack(side='right', fill='y', padx=(0, 20), pady=20)
 try:
     image_path = './tests/logo.png'  # Ajuste conforme teu projeto
     img = Image.open(image_path)
-    img = img.resize((160, 160))
+    img = img.resize((190, 160))
     img_tk = ImageTk.PhotoImage(img)
     lbl_logo = ttk.Label(frame_menu, image=img_tk, background='#f5f6f7')
     lbl_logo.image = img_tk
@@ -149,9 +149,9 @@ def upload_arquivo():
 
             # Busca todos os logs referentes a esse arquivo
             logs = (
-                sess.query(m.LogSistema)
-                .filter(m.LogSistema.arquivo_id == arq_id)
-                .order_by(m.LogSistema.data.asc())
+                sess.query(m.Log)
+                .filter(m.Log.arquivo_id == arq_id)
+                .order_by(m.Log.data.asc())
                 .all()
             )
 
@@ -270,10 +270,10 @@ def consultas_prontas():
 def consulta_sql():
     janela_sql = tk.Toplevel(janela)
     janela_sql.title('Consulta SQL customizada')
-    janela_sql.geometry('500x300')
+    janela_sql.geometry('500x400')
 
     ttk.Label(janela_sql, text='Digite uma consulta SELECT:').pack(pady=10)
-    entry_sql = tk.Text(janela_sql, height=6, width=60)
+    entry_sql = tk.Text(janela_sql, height=18, width=220)
     entry_sql.pack(padx=10)
 
     def executar_sql():
