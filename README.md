@@ -1,7 +1,8 @@
+````markdown
 # Analisador de Arquivos com IA e Interface Gráfica
 
-Este projeto é um **analisador inteligente de arquivos** capaz de ler, armazenar, resumir e responder perguntas sobre documentos em diferentes formatos — como PDF, DOCX, XLSX, CSV, TXT e Markdown — utilizando **LangChain**, **Groq** e **SQLAlchemy**.  
-O sistema inclui uma **interface gráfica (Tkinter)** que facilita a interação com o usuário e a visualização dos resultados.
+O **Analisador de Arquivos** é uma aplicação desenvolvida em **Python**, que utiliza **Inteligência Artificial**, **LangChain**, **Groq** e **SQLAlchemy** para analisar, resumir e responder perguntas sobre diversos tipos de documentos.  
+O sistema inclui uma **interface gráfica (Tkinter)** moderna e funcional, permitindo o envio de arquivos, execução de consultas SQL, geração de gráficos e interação direta com um modelo de linguagem.
 
 ---
 
@@ -9,84 +10,144 @@ O sistema inclui uma **interface gráfica (Tkinter)** que facilita a interação
 
 - **Upload e processamento automático de arquivos**  
   Ao enviar um arquivo, o sistema:
-  1. Extrai o conteúdo textual (com suporte a múltiplos formatos);
-  2. Gera embeddings e um índice FAISS para consultas semânticas;
-  3. Produz automaticamente um resumo via modelo Groq;
-  4. Realiza uma análise técnica do arquivo (palavras, páginas, sentimento, densidade, etc.);
-  5. Registra todas as ações e erros na tabela de log.
+  1. Extrai o conteúdo textual (PDF, DOCX, XLSX, CSV, TXT ou Markdown);  
+  2. Gera embeddings e cria um índice FAISS para consultas semânticas;  
+  3. Produz automaticamente um resumo via Groq (LangChain);  
+  4. Registra todas as etapas e erros em logs detalhados.  
 
-- **Consultas e respostas automáticas via IA**  
-  É possível fazer perguntas sobre qualquer arquivo enviado.  
-  O sistema busca os trechos mais relevantes no conteúdo e responde de forma contextualizada.
+- **Consultas e respostas inteligentes (RAG)**  
+  Permite fazer perguntas sobre o conteúdo dos arquivos, obtendo respostas baseadas em trechos contextualmente relevantes.  
 
-- **Consultas SQL e geração de gráficos**  
-  O usuário pode:
-  - Rodar consultas SQL customizadas;
-  - Executar gráficos prontos (quantidade de arquivos, perguntas por documento, tempo médio de resposta);
-  - Visualizar resultados salvos automaticamente em planilhas Excel.
+- **Consultas SQL e gráficos**  
+  - Executa consultas SQL personalizadas direto da interface;  
+  - Gera gráficos automáticos com Matplotlib (quantidade de arquivos, perguntas por documento, tempo médio de resposta, etc.);  
+  - Exporta resultados de consultas para planilhas Excel.
 
-- **Interface Gráfica (Tkinter)**  
-  A interface inclui:
-  - Área de chat com histórico de mensagens;
-  - Botões laterais para operações principais (upload, gráficos, consultas);
-  - Campo de entrada e envio de perguntas com exibição de respostas;
-  - Logotipo customizável e mensagens coloridas para feedback visual.
+- **Interface gráfica interativa (Tkinter)**  
+  Inclui uma área de chat com mensagens coloridas, botões laterais para ações rápidas, campo de envio de perguntas e exibição em tempo real das respostas da IA.
 
 ---
 
-## Estrutura do Banco de Dados
+## Estrutura de Classes (SQLAlchemy ORM)
 
-O banco foi modelado com **SQLAlchemy ORM**, contendo 11 entidades principais:
+O sistema segue uma arquitetura orientada a objetos, com 10 entidades principais modeladas via SQLAlchemy.  
+O diagrama abaixo mostra as classes e seus relacionamentos:
 
 ```mermaid
-erDiagram
-    TipoArquivo ||--o{ Arquivo : possui
-    Arquivo ||--|| ConteudoExtraido : tem
-    ConteudoExtraido ||--o{ Embedding : gera
-    Arquivo ||--o{ Pergunta : recebe
-    Pergunta ||--|| RespostaIA : gera
-    Arquivo ||--o{ Log : registra
-    Arquivo ||--|| Resumo : sintetiza
-    Arquivo ||--|| AnaliseArquivo : analisa
-    ConsultaSQL ||--|| ResultadoConsulta : produz
+classDiagram
+    class TipoArquivo {
+        +int id
+        +string nome
+        +List~Arquivo~ arquivos
+    }
+
+    class Arquivo {
+        +int id
+        +string nome
+        +int tipo_id
+        +datetime data_upload
+        +bytes conteudo
+        +int tamanho
+        +string hash_sha256
+        +TipoArquivo tipo
+        +ConteudoExtraido conteudo_extraido
+        +List~Pergunta~ perguntas
+        +Resumo resumo
+        +List~Log~ logs
+    }
+
+    class ConteudoExtraido {
+        +int id
+        +int arquivo_id
+        +text texto
+        +Arquivo arquivo
+        +List~Embedding~ embeddings
+    }
+
+    class Embedding {
+        +int id
+        +int conteudo_id
+        +int num_chunks
+        +int dim
+        +string index_path
+        +ConteudoExtraido conteudo
+    }
+
+    class Pergunta {
+        +int id
+        +int arquivo_id
+        +text texto
+        +datetime data
+        +Arquivo arquivo
+        +RespostaIA resposta
+    }
+
+    class RespostaIA {
+        +int id
+        +int pergunta_id
+        +text resposta
+        +float tempo_execucao
+        +int tokens_input
+        +int tokens_output
+        +Pergunta pergunta
+    }
+
+    class Log {
+        +int id
+        +int arquivo_id
+        +string acao
+        +text detalhe
+        +datetime data
+        +Arquivo arquivo
+    }
+
+    class Resumo {
+        +int id
+        +int arquivo_id
+        +text texto
+        +datetime data
+        +Arquivo arquivo
+    }
+
+    class ConsultaSQL {
+        +int id
+        +text sql
+        +text descricao
+        +datetime data
+        +ResultadoConsulta resultado
+    }
+
+    class ResultadoConsulta {
+        +int id
+        +int consulta_id
+        +string caminho_arquivo
+        +json dados_json
+        +int linhas
+        +int colunas
+        +datetime data_execucao
+        +ConsultaSQL consulta
+    }
+
+    TipoArquivo "1" --> "many" Arquivo
+    Arquivo "1" --> "1" ConteudoExtraido
+    ConteudoExtraido "1" --> "many" Embedding
+    Arquivo "1" --> "many" Pergunta
+    Pergunta "1" --> "1" RespostaIA
+    Arquivo "1" --> "1" Resumo
+    Arquivo "1" --> "many" Log
+    ConsultaSQL "1" --> "1" ResultadoConsulta
 ````
 
-**Descrição resumida das entidades:**
-
-* **Arquivo**: armazena o binário e metadados de cada documento.
-* **ConteudoExtraido**: guarda o texto puro do arquivo.
-* **Embedding**: metadados sobre o índice vetorial FAISS.
-* **Pergunta** e **RespostaIA**: controlam o diálogo entre o usuário e o sistema.
-* **Resumo**: resumo textual gerado automaticamente via IA.
-* **Log**: histórico detalhado de operações e erros.
-* **AnaliseArquivo**: estatísticas e insights automáticos (palavras, tamanho, sentimento).
-* **ConsultaSQL** e **ResultadoConsulta**: consultas salvas e seus respectivos resultados.
-
 ---
 
-## Tecnologias Utilizadas
-
-* **Python 3.12+**
-* **LangChain**, **LangChain-Text-Splitters**, **LangChain-Groq**
-* **SQLAlchemy**
-* **Pandas**
-* **Matplotlib**
-* **Tkinter (GUI)**
-* **PyMuPDF (PDF)**, **python-docx**, **markdown2**
-* **HuggingFaceEmbeddings**
-* **FAISS** (armazenamento vetorial)
-* **dotenv** (configuração do ambiente)
-
----
-
-## Boas Práticas e Execução
+## Instalação e Execução
 
 ### 1. Criar e ativar o ambiente virtual (venv)
 
 ```bash
 python -m venv venv
-source venv/bin/activate    # Linux/macOS
 venv\Scripts\activate       # Windows
+source venv/bin/activate    # Linux/macOS
 ```
 
 ### 2. Instalar as dependências
@@ -105,13 +166,13 @@ GROQ_API_KEY=sua_chave_aqui
 GROQ_API_MODEL=llama-3.3-70b-versatile
 ```
 
-### 4. Executar o programa
+### 4. Executar o sistema no terminal
 
 ```bash
 python main.py
 ```
 
-ou, para rodar a interface gráfica:
+### 5. Rodar a interface gráfica
 
 ```bash
 python interface.py
@@ -119,13 +180,14 @@ python interface.py
 
 ---
 
-## Boas Práticas de Desenvolvimento
+## Boas Práticas
 
-* Utilize **venv** sempre que iniciar um novo ambiente — isso evita conflitos de dependências.
-* Prefira **métodos ORM (SQLAlchemy)** a SQL direto para manter portabilidade e segurança.
-* Evite hardcodes de caminhos: use `os.path.join()` e variáveis do `.env`.
-* Faça **commits frequentes** e documente mudanças relevantes.
-* Teste cada tipo de arquivo suportado antes de subir alterações.
+* **Use ambientes virtuais (venv)** para isolar dependências e evitar conflitos de versão.
+* **Não versione o arquivo `.env`** — ele deve conter credenciais locais.
+* Prefira usar o ORM (**SQLAlchemy**) em vez de SQL cru, por segurança e portabilidade.
+* Mantenha uma separação clara entre **lógica de aplicação (main.py)** e **interface (interface.py)**.
+* Crie **commits curtos e descritivos**, e mantenha o README atualizado a cada nova versão.
+* Teste uploads de diferentes formatos de arquivo antes de atualizar o repositório.
 
 ---
 
@@ -133,33 +195,41 @@ python interface.py
 
 ```
 analisador-arquivos/
-├── main.py                # Núcleo do sistema e lógica principal
-├── interface.py           # Interface gráfica Tkinter
-├── requirements.txt       # Dependências
-├── .env                   # Configurações locais (não versionar)
-├── charts/                # Gráficos gerados
-├── consultas/             # Consultas SQL salvas
-├── indices_faiss/         # Índices vetoriais FAISS
-└── tests/                 # Recursos auxiliares (logos, arquivos de teste, etc.)
+├── main.py                # Núcleo do sistema (banco, IA, extração, gráficos)
+├── interface.py           # Interface Tkinter
+├── requirements.txt       # Dependências do projeto
+├── .env                   # Configurações de ambiente
+├── charts/                # Gráficos gerados automaticamente
+├── consultas/             # Consultas SQL salvas em Excel
+├── indices_faiss/         # Índices vetoriais (FAISS)
+├── tests/                 # Recursos de teste (logos, arquivos exemplo)
+└── README.md              # Este documento
 ```
-
----
-
-## Contribuição
-
-Contribuições são bem-vindas.
-Antes de enviar um pull request:
-
-1. Certifique-se de que todas as dependências estão atualizadas;
-2. Teste as principais funções (`upload`, `pergunta`, `consultas`);
-3. Documente novas entidades ou alterações estruturais no README.
 
 ---
 
 ## Licença
 
-Este projeto é distribuído sob a licença MIT.
-Você pode usar, modificar e distribuir livremente, desde que mantenha os créditos originais.
+Este projeto é distribuído sob a licença **MIT**.
+Você pode usar, modificar e redistribuir livremente, desde que mantenha os créditos originais.
+
+---
+
+## Observação Final
+
+O projeto segue princípios de **modularidade, reprodutibilidade e escalabilidade**, com uma arquitetura que combina **processamento local** (FAISS e SQLAlchemy) com **inteligência artificial baseada em LangChain**.
+A interface gráfica transforma a complexidade técnica em uma experiência acessível e intuitiva, adequada tanto para demonstrações acadêmicas quanto para aplicações reais.
+
+---
+
+```
+
+---
+
+Quer que eu acrescente também uma seção **“🚀 Extensões futuras”**, listando ideias como adicionar `AnaliseArquivo`, suporte a busca global entre documentos ou exportação em PDF dos resumos? Isso deixa o README mais completo e com visão de evolução.
+```
+
+---
 
 ## Créditos
 
