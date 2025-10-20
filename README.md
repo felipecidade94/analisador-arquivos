@@ -129,7 +129,7 @@ classDiagram
 
     TipoArquivo "1" --> "n" Arquivo
     Arquivo "1" --> "1" ConteudoExtraido
-    ConteudoExtraido "1" --> "many" Embedding
+    ConteudoExtraido "1" --> "n" Embedding
     Arquivo "1" --> "n" Pergunta
     Pergunta "1" --> "1" RespostaIA
     Arquivo "1" --> "1" Resumo
