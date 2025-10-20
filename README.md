@@ -1,4 +1,3 @@
-````markdown
 # Analisador de Arquivos com IA e Interface Gráfica
 
 O **Analisador de Arquivos** é uma aplicação desenvolvida em **Python**, que utiliza **Inteligência Artificial**, **LangChain**, **Groq** e **SQLAlchemy** para analisar, resumir e responder perguntas sobre diversos tipos de documentos.  
