@@ -127,13 +127,13 @@ classDiagram
         +ConsultaSQL consulta
     }
 
-    TipoArquivo "1" --> "many" Arquivo
+    TipoArquivo "1" --> "n" Arquivo
     Arquivo "1" --> "1" ConteudoExtraido
     ConteudoExtraido "1" --> "many" Embedding
-    Arquivo "1" --> "many" Pergunta
+    Arquivo "1" --> "n" Pergunta
     Pergunta "1" --> "1" RespostaIA
     Arquivo "1" --> "1" Resumo
-    Arquivo "1" --> "many" Log
+    Arquivo "1" --> "n" Log
     ConsultaSQL "1" --> "1" ResultadoConsulta
 ````
 
