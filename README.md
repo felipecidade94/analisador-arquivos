@@ -136,7 +136,7 @@ classDiagram
     Arquivo "1" --> "1" Resumo
     Arquivo "1" --> "many" Log
     ConsultaSQL "1" --> "1" ResultadoConsulta
-````
+```
 
 ---
 
