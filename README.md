@@ -1,4 +1,3 @@
-````markdown
 # Analisador de Arquivos com IA e Interface Gráfica
 
 Este projeto é um **analisador inteligente de arquivos** capaz de ler, armazenar, resumir e responder perguntas sobre documentos em diferentes formatos — como PDF, DOCX, XLSX, CSV, TXT e Markdown — utilizando **LangChain**, **Groq** e **SQLAlchemy**.  
