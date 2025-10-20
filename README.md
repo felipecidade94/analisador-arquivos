@@ -1,162 +1,167 @@
-# Analisador de Arquivos com IA e Banco de Dados
+````markdown
+# Analisador de Arquivos com IA e Interface Gráfica
 
-Este projeto implementa um sistema inteligente de análise de arquivos utilizando **Python, SQLAlchemy, PostgreSQL e Groq (LangChain)**.
-Ele foi desenvolvido como trabalho final da disciplina **Banco de Dados (DEC7588 – UFSC 2025.2)** e integra conceitos de banco relacional, processamento de dados, inteligência artificial e visualização de resultados.
-
----
-
-## 1. Objetivo do Sistema
-
-O sistema tem como propósito **analisar, armazenar e gerar insights automáticos** sobre arquivos de diferentes formatos, como PDF, DOCX, XLSX, CSV e TXT.
-Cada arquivo é processado, indexado semanticamente e integrado a uma IA generativa (via Groq API), permitindo consultas e perguntas inteligentes sobre o conteúdo.
-
-Além disso, o sistema gera **resumos automáticos** dos arquivos e consultas com **gráficos dinâmicos** baseados em dados armazenados no banco.
+Este projeto é um **analisador inteligente de arquivos** capaz de ler, armazenar, resumir e responder perguntas sobre documentos em diferentes formatos — como PDF, DOCX, XLSX, CSV, TXT e Markdown — utilizando **LangChain**, **Groq** e **SQLAlchemy**.  
+O sistema inclui uma **interface gráfica (Tkinter)** que facilita a interação com o usuário e a visualização dos resultados.
 
 ---
 
-## 2. Funcionalidades Principais
+## Funcionalidades Principais
 
-* **Upload de arquivos** com armazenamento binário (BYTEA) no PostgreSQL
-* **Extração automática de texto** de PDFs, planilhas e documentos
-* **Indexação semântica** via **FAISS + Sentence Transformers**
-* **Integração com IA Groq** para responder perguntas sobre os arquivos
-* **Geração automática de resumos** de cada arquivo
-* **Consultas SQL customizadas** e **gráficos automáticos**
-* **Logs detalhados** de todas as operações realizadas
+- **Upload e processamento automático de arquivos**  
+  Ao enviar um arquivo, o sistema:
+  1. Extrai o conteúdo textual (com suporte a múltiplos formatos);
+  2. Gera embeddings e um índice FAISS para consultas semânticas;
+  3. Produz automaticamente um resumo via modelo Groq;
+  4. Realiza uma análise técnica do arquivo (palavras, páginas, sentimento, densidade, etc.);
+  5. Registra todas as ações e erros na tabela de log.
 
----
+- **Consultas e respostas automáticas via IA**  
+  É possível fazer perguntas sobre qualquer arquivo enviado.  
+  O sistema busca os trechos mais relevantes no conteúdo e responde de forma contextualizada.
 
-## 3. Estrutura do Banco de Dados
+- **Consultas SQL e geração de gráficos**  
+  O usuário pode:
+  - Rodar consultas SQL customizadas;
+  - Executar gráficos prontos (quantidade de arquivos, perguntas por documento, tempo médio de resposta);
+  - Visualizar resultados salvos automaticamente em planilhas Excel.
 
-O sistema utiliza 10 entidades principais:
-
-1. **tipo_arquivo** – define a extensão e categoria dos arquivos
-2. **arquivo** – armazena metadados e conteúdo binário
-3. **conteudo_extraido** – texto processado de cada arquivo
-4. **embedding** – metadados dos vetores semânticos gerados
-5. **pergunta** – histórico de perguntas feitas à IA
-6. **resposta_ia** – respostas fornecidas pelo modelo Groq
-7. **consulta_sql** – consultas executadas pelo usuário
-8. **grafico** – gráficos gerados a partir das consultas
-9. **log_sistema** – registro de eventos e erros
-10. **resumo** – resumo automático do conteúdo de cada arquivo
-
----
-
-## 4. Tecnologias Utilizadas
-
-* **Linguagem:** Python 3.10+
-* **Banco de Dados:** PostgreSQL
-* **ORM:** SQLAlchemy
-* **IA Generativa:** LangChain + Groq API
-* **Embeddings:** Sentence Transformers (all-MiniLM-L6-v2)
-* **Busca Vetorial:** FAISS
-* **Visualização:** Matplotlib
-* **Extração de Conteúdo:** PyMuPDF, python-docx, pandas, openpyxl
-* **Ambiente:** python-dotenv, psycopg2
+- **Interface Gráfica (Tkinter)**  
+  A interface inclui:
+  - Área de chat com histórico de mensagens;
+  - Botões laterais para operações principais (upload, gráficos, consultas);
+  - Campo de entrada e envio de perguntas com exibição de respostas;
+  - Logotipo customizável e mensagens coloridas para feedback visual.
 
 ---
 
-## 5. Instalação
+## Estrutura do Banco de Dados
 
-### Passo 1: Clonar o repositório
+O banco foi modelado com **SQLAlchemy ORM**, contendo 11 entidades principais:
 
-```bash
-git clone https://github.com/seuusuario/analisador-arquivos.git
-cd analisador-arquivos
-```
+```mermaid
+erDiagram
+    TipoArquivo ||--o{ Arquivo : possui
+    Arquivo ||--|| ConteudoExtraido : tem
+    ConteudoExtraido ||--o{ Embedding : gera
+    Arquivo ||--o{ Pergunta : recebe
+    Pergunta ||--|| RespostaIA : gera
+    Arquivo ||--o{ Log : registra
+    Arquivo ||--|| Resumo : sintetiza
+    Arquivo ||--|| AnaliseArquivo : analisa
+    ConsultaSQL ||--|| ResultadoConsulta : produz
+````
 
-### Passo 2: Criar e ativar o ambiente virtual
+**Descrição resumida das entidades:**
+
+* **Arquivo**: armazena o binário e metadados de cada documento.
+* **ConteudoExtraido**: guarda o texto puro do arquivo.
+* **Embedding**: metadados sobre o índice vetorial FAISS.
+* **Pergunta** e **RespostaIA**: controlam o diálogo entre o usuário e o sistema.
+* **Resumo**: resumo textual gerado automaticamente via IA.
+* **Log**: histórico detalhado de operações e erros.
+* **AnaliseArquivo**: estatísticas e insights automáticos (palavras, tamanho, sentimento).
+* **ConsultaSQL** e **ResultadoConsulta**: consultas salvas e seus respectivos resultados.
+
+---
+
+## Tecnologias Utilizadas
+
+* **Python 3.12+**
+* **LangChain**, **LangChain-Text-Splitters**, **LangChain-Groq**
+* **SQLAlchemy**
+* **Pandas**
+* **Matplotlib**
+* **Tkinter (GUI)**
+* **PyMuPDF (PDF)**, **python-docx**, **markdown2**
+* **HuggingFaceEmbeddings**
+* **FAISS** (armazenamento vetorial)
+* **dotenv** (configuração do ambiente)
+
+---
+
+## Boas Práticas e Execução
+
+### 1. Criar e ativar o ambiente virtual (venv)
 
 ```bash
 python -m venv venv
-source venv/bin/activate   # Linux/macOS
-venv\\Scripts\\activate    # Windows
+source venv/bin/activate    # Linux/macOS
+venv\Scripts\activate       # Windows
 ```
 
-### Passo 3: Instalar dependências
+### 2. Instalar as dependências
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### Passo 4: Criar o arquivo `.env`
+### 3. Configurar variáveis de ambiente (`.env`)
 
-```bash
-DATABASE_URL=postgresql+psycopg2://usuario:senha@localhost:5432/analisador-de-arquivos
+Crie um arquivo `.env` na raiz do projeto:
+
+```
+DATABASE_URL=sqlite:///analisador.db
 GROQ_API_KEY=sua_chave_aqui
 GROQ_API_MODEL=llama-3.3-70b-versatile
 ```
 
----
-
-## 6. Execução do Sistema
+### 4. Executar o programa
 
 ```bash
 python main.py
 ```
-Ou
+
+ou, para rodar a interface gráfica:
 
 ```bash
 python interface.py
 ```
 
-### Menu Principal
-
-```
-============== MENU ==============
-1) Criar tabelas
-2) Remover tabelas
-3) Upload de arquivo
-4) Perguntar sobre um arquivo
-5) Consultas e gráficos prontos (3 exemplos)
-6) Rodar consulta SQL customizada
-0) Sair
-```
-
-### Exemplos de uso
-
-* **Upload:** envia um arquivo PDF, DOCX, XLSX, XLS ou MD e gera automaticamente seu resumo.
-* **Perguntar:** faz perguntas sobre o conteúdo do arquivo.
-* **Consultas:** executa consultas SQL no banco e gera gráficos automáticos.
-* **Exemplos de gráficos pré-escolhidos:** cria três gráficos.
 ---
 
-## 7. Estrutura de Pastas
+## Boas Práticas de Desenvolvimento
+
+* Utilize **venv** sempre que iniciar um novo ambiente — isso evita conflitos de dependências.
+* Prefira **métodos ORM (SQLAlchemy)** a SQL direto para manter portabilidade e segurança.
+* Evite hardcodes de caminhos: use `os.path.join()` e variáveis do `.env`.
+* Faça **commits frequentes** e documente mudanças relevantes.
+* Teste cada tipo de arquivo suportado antes de subir alterações.
+
+---
+
+## Estrutura do Projeto
 
 ```
 analisador-arquivos/
-├── main.py
-├── interface.py
-├── requirements.txt
-├── .env
-├── indices_faiss/
-├── charts/
-├── consultas/
-└── README.md
+├── main.py                # Núcleo do sistema e lógica principal
+├── interface.py           # Interface gráfica Tkinter
+├── requirements.txt       # Dependências
+├── .env                   # Configurações locais (não versionar)
+├── charts/                # Gráficos gerados
+├── consultas/             # Consultas SQL salvas
+├── indices_faiss/         # Índices vetoriais FAISS
+└── tests/                 # Recursos auxiliares (logos, arquivos de teste, etc.)
 ```
 
 ---
 
-## 8. Consultas e Gráficos
+## Contribuição
 
-O sistema gera três consultas automáticas (exibindo e salvando gráficos):
+Contribuições são bem-vindas.
+Antes de enviar um pull request:
 
-* Quantidade de arquivos por tipo
-* Número de perguntas por arquivo
-* Tempo médio de resposta da IA por tipo de arquivo
-
-Além disso, o usuário pode realizar **consultas personalizadas** e salvar os resultados em **planilhas Excel**.
+1. Certifique-se de que todas as dependências estão atualizadas;
+2. Teste as principais funções (`upload`, `pergunta`, `consultas`);
+3. Documente novas entidades ou alterações estruturais no README.
 
 ---
 
-## 9. Licença
+## Licença
 
 Este projeto é distribuído sob a licença MIT.
-Sinta-se livre para estudar, modificar e adaptar o código para seus próprios projetos acadêmicos ou pessoais.
+Você pode usar, modificar e distribuir livremente, desde que mantenha os créditos originais.
 
----
-
-## 10. Créditos
+## Créditos
 
 Desenvolvido por **Felipe Cidade Soares**
