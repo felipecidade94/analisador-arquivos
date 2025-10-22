@@ -1,5 +1,3 @@
-
-
 ````markdown
 # 🧠 Analisador de Arquivos com IA e SQLAlchemy
 
@@ -39,7 +37,7 @@ O projeto permite **upload de documentos**, **armazenamento em banco de dados**,
 
 ## 🧩 Diagrama de Classes (Mermaid)
 
-````mermaid
+```mermaid
 classDiagram
     class TipoArquivo {
         +id : int
@@ -101,7 +99,7 @@ classDiagram
     Pergunta "1" --> "1" RespostaIA
     Arquivo "1" --> "N" Log
     ConsultaSQL "1" --> "1" ResultadoConsulta
-````
+```
 
 ---
 
