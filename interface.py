@@ -42,7 +42,7 @@ frame_menu.pack(side='right', fill='y', padx=(0, 20), pady=20)
 # LOGO
 # ---------------------------------------------
 try:
-    image_path = './tests/logo.png'
+    image_path = './img/logo.png'
     img = Image.open(image_path)
     img = img.resize((190, 160))
     img_tk = ImageTk.PhotoImage(img)
