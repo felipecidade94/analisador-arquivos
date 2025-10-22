@@ -39,7 +39,7 @@ O projeto permite **upload de documentos**, **armazenamento em banco de dados**,
 
 ## 🧩 Diagrama de Classes (Mermaid)
 
-```mermaid
+````mermaid
 classDiagram
     class TipoArquivo {
         +id : int
