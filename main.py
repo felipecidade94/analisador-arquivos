@@ -219,10 +219,12 @@ def extract_content_by_type(tipo: str, data: bytes) -> str:
 # ------------------------------------------------------------
 def ensure_tipo(conn, nome_tipo: str) -> int:
     r = conn.execute(text("SELECT id FROM tipo_arquivo WHERE nome = :n"), {"n": nome_tipo}).fetchone()
-    if r: return r[0]
+    if r:
+        return r[0]
     conn.execute(text("INSERT INTO tipo_arquivo (nome) VALUES (:n)"), {"n": nome_tipo})
-    conn.commit()
+    # ❌ NÃO usar conn.commit() dentro de um engine.begin()
     return conn.execute(text("SELECT id FROM tipo_arquivo WHERE nome = :n"), {"n": nome_tipo}).scalar()
+
 
 def build_or_load_index_for_file(sess, conteudo: ConteudoExtraido) -> Tuple[FAISS, str]:
     texto = conteudo.texto or ''

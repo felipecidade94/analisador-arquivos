@@ -1,235 +1,177 @@
-# Analisador de Arquivos com IA e Interface Gráfica
+````markdown
+# 🧠 Analisador de Arquivos com IA e SQLAlchemy
 
-O **Analisador de Arquivos** é uma aplicação desenvolvida em **Python**, que utiliza **Inteligência Artificial**, **LangChain**, **Groq** e **SQLAlchemy** para analisar, resumir e responder perguntas sobre diversos tipos de documentos.  
-O sistema inclui uma **interface gráfica (Tkinter)** moderna e funcional, permitindo o envio de arquivos, execução de consultas SQL, geração de gráficos e interação direta com um modelo de linguagem.
-
----
-
-## Funcionalidades Principais
-
-- **Upload e processamento automático de arquivos**  
-  Ao enviar um arquivo, o sistema:
-  1. Extrai o conteúdo textual (PDF, DOCX, XLSX, CSV, TXT ou Markdown);  
-  2. Gera embeddings e cria um índice FAISS para consultas semânticas;  
-  3. Produz automaticamente um resumo via Groq (LangChain);  
-  4. Registra todas as etapas e erros em logs detalhados.  
-
-- **Consultas e respostas inteligentes (RAG)**  
-  Permite fazer perguntas sobre o conteúdo dos arquivos, obtendo respostas baseadas em trechos contextualmente relevantes.  
-
-- **Consultas SQL e gráficos**  
-  - Executa consultas SQL personalizadas direto da interface;  
-  - Gera gráficos automáticos com Matplotlib (quantidade de arquivos, perguntas por documento, tempo médio de resposta, etc.);  
-  - Exporta resultados de consultas para planilhas Excel.
-
-- **Interface gráfica interativa (Tkinter)**  
-  Inclui uma área de chat com mensagens coloridas, botões laterais para ações rápidas, campo de envio de perguntas e exibição em tempo real das respostas da IA.
+Sistema Python para gerenciamento, extração e análise de arquivos utilizando **SQLAlchemy**, **LangChain**, e **FAISS**.  
+O projeto permite **upload de documentos**, **armazenamento em banco de dados**, **extração de texto**, **resumos automáticos**, **criação de embeddings vetoriais** e **consultas SQL com visualização gráfica**.
 
 ---
 
-## Estrutura de Classes (SQLAlchemy ORM)
+## ⚙️ Funcionalidades Principais
 
-O sistema segue uma arquitetura orientada a objetos, com 10 entidades principais modeladas via SQLAlchemy.  
-O diagrama abaixo mostra as classes e seus relacionamentos:
+- **Upload inteligente**  
+  - Detecção de arquivos duplicados via hash SHA256  
+  - Extração automática de texto (PDF, DOCX, CSV, Excel, TXT e Markdown)  
+  - Geração de resumo inicial e logs detalhados  
+
+- **Banco de dados relacional (SQLAlchemy ORM)**  
+  - Estrutura robusta com entidades relacionadas (`Arquivo`, `ConteudoExtraido`, `Embedding`, `Resumo`, `Pergunta`, `RespostaIA`, `Log`, `ConsultaSQL`, `ResultadoConsulta`)  
+  - Suporte a consultas híbridas ORM + SQL bruto  
+
+- **Consultas SQL customizadas e exportação**  
+  - Execução livre de comandos `SELECT`  
+  - Exportação de resultados em `.xlsx`  
+  - Diretório automático `/consultas` para histórico  
+
+- **Visualização de dados com gráficos (Matplotlib)**  
+  - 3 gráficos prontos:
+    1. Arquivos por tipo  
+    2. Perguntas por arquivo (nomes truncados para 15 caracteres)  
+    3. Tempo médio de resposta por tipo de arquivo  
+  - Eixos formatados e rotação automática das legendas  
+
+- **Integração com embeddings (FAISS + LangChain)**  
+  - Fragmentação de texto (`RecursiveCharacterTextSplitter`)  
+  - Armazenamento e reuso de índices FAISS locais  
+
+---
+
+## 🧩 Diagrama de Classes (Mermaid)
 
 ```mermaid
 classDiagram
     class TipoArquivo {
-        +int id
-        +string nome
-        +List~Arquivo~ arquivos
+        +id : int
+        +nome : str
     }
-
     class Arquivo {
-        +int id
-        +string nome
-        +int tipo_id
-        +datetime data_upload
-        +bytes conteudo
-        +int tamanho
-        +string hash_sha256
-        +TipoArquivo tipo
-        +ConteudoExtraido conteudo_extraido
-        +List~Pergunta~ perguntas
-        +Resumo resumo
-        +List~Log~ logs
+        +id : int
+        +nome : str
+        +tamanho : int
+        +hash_sha256 : str
+        +data_upload : datetime
     }
-
     class ConteudoExtraido {
-        +int id
-        +int arquivo_id
-        +text texto
-        +Arquivo arquivo
-        +List~Embedding~ embeddings
+        +id : int
+        +texto : text
     }
-
     class Embedding {
-        +int id
-        +int conteudo_id
-        +int num_chunks
-        +int dim
-        +string index_path
-        +ConteudoExtraido conteudo
+        +id : int
+        +num_chunks : int
+        +dim : int
+        +index_path : str
     }
-
-    class Pergunta {
-        +int id
-        +int arquivo_id
-        +text texto
-        +datetime data
-        +Arquivo arquivo
-        +RespostaIA resposta
-    }
-
-    class RespostaIA {
-        +int id
-        +int pergunta_id
-        +text resposta
-        +float tempo_execucao
-        +int tokens_input
-        +int tokens_output
-        +Pergunta pergunta
-    }
-
-    class Log {
-        +int id
-        +int arquivo_id
-        +string acao
-        +text detalhe
-        +datetime data
-        +Arquivo arquivo
-    }
-
     class Resumo {
-        +int id
-        +int arquivo_id
-        +text texto
-        +datetime data
-        +Arquivo arquivo
+        +id : int
+        +texto : text
     }
-
+    class Pergunta {
+        +id : int
+        +texto : text
+        +data : datetime
+    }
+    class RespostaIA {
+        +id : int
+        +resposta : text
+        +tempo_execucao : float
+    }
+    class Log {
+        +id : int
+        +acao : str
+        +detalhe : text
+        +data : datetime
+    }
     class ConsultaSQL {
-        +int id
-        +text sql
-        +text descricao
-        +datetime data
-        +ResultadoConsulta resultado
+        +id : int
+        +sql : text
+        +descricao : text
     }
-
     class ResultadoConsulta {
-        +int id
-        +int consulta_id
-        +string caminho_arquivo
-        +json dados_json
-        +int linhas
-        +int colunas
-        +datetime data_execucao
-        +ConsultaSQL consulta
+        +id : int
+        +caminho_arquivo : str
+        +dados_json : JSON
     }
 
-    TipoArquivo "1" --> "n" Arquivo
+    TipoArquivo "1" --> "N" Arquivo
     Arquivo "1" --> "1" ConteudoExtraido
-    ConteudoExtraido "1" --> "n" Embedding
-    Arquivo "1" --> "n" Pergunta
-    Pergunta "1" --> "1" RespostaIA
+    ConteudoExtraido "1" --> "N" Embedding
     Arquivo "1" --> "1" Resumo
-    Arquivo "1" --> "n" Log
+    Arquivo "1" --> "N" Pergunta
+    Pergunta "1" --> "1" RespostaIA
+    Arquivo "1" --> "N" Log
     ConsultaSQL "1" --> "1" ResultadoConsulta
 ````
 
 ---
 
-## Instalação e Execução
+## 🧰 Estrutura de Pastas
 
-### 1. Criar e ativar o ambiente virtual (venv)
+```
+analisador-arquivos/
+│
+├── main.py
+├── interface.py
+├── .env
+├── .gitignore
+├── requirements.txt
+│
+├── indices_faiss/        # Índices vetoriais FAISS
+├── charts/               # Gráficos gerados
+├── consultas/            # Resultados de SQL customizados
+└── venv/                 # Ambiente virtual (ignorado no Git)
+```
+
+---
+
+## 🚀 Execução
+
+### 1. Crie e ative o ambiente virtual
 
 ```bash
 python -m venv venv
-venv\Scripts\activate       # Windows
-source venv/bin/activate    # Linux/macOS
+venv\Scripts\activate   # Windows
+# ou
+source venv/bin/activate  # Linux/Mac
 ```
 
-### 2. Instalar as dependências
+### 2. Instale as dependências
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Configurar variáveis de ambiente (`.env`)
+### 3. Configure o `.env`
 
 Crie um arquivo `.env` na raiz do projeto:
 
 ```
 DATABASE_URL=sqlite:///analisador.db
 GROQ_API_KEY=sua_chave_aqui
-GROQ_API_MODEL=llama-3.3-70b-versatile
+GROQ_API_MODEL=llama-3-70b
 ```
 
-### 4. Executar o sistema no terminal
+### 4. Execute o sistema
 
 ```bash
 python main.py
 ```
 
-### 5. Rodar a interface gráfica
-
-```bash
-python interface.py
-```
+O menu interativo CLI será exibido com opções para criar tabelas, enviar arquivos, consultar, ou gerar gráficos.
 
 ---
 
-## Boas Práticas
+## 🧠 Boas Práticas
 
-* **Use ambientes virtuais (venv)** para isolar dependências e evitar conflitos de versão.
-* **Não versione o arquivo `.env`** — ele deve conter credenciais locais.
-* Prefira usar o ORM (**SQLAlchemy**) em vez de SQL cru, por segurança e portabilidade.
-* Mantenha uma separação clara entre **lógica de aplicação (main.py)** e **interface (interface.py)**.
-* Crie **commits curtos e descritivos**, e mantenha o README atualizado a cada nova versão.
-* Teste uploads de diferentes formatos de arquivo antes de atualizar o repositório.
-
----
-
-## Estrutura do Projeto
-
-```
-analisador-arquivos/
-├── main.py                # Núcleo do sistema (banco, IA, extração, gráficos)
-├── interface.py           # Interface Tkinter
-├── requirements.txt       # Dependências do projeto
-├── .env                   # Configurações de ambiente
-├── charts/                # Gráficos gerados automaticamente
-├── consultas/             # Consultas SQL salvas em Excel
-├── indices_faiss/         # Índices vetoriais (FAISS)
-├── tests/                 # Recursos de teste (logos, arquivos exemplo)
-└── README.md              # Este documento
-```
+* Sempre use `venv` para isolar dependências.
+* Mantenha o arquivo `.env` fora do controle de versão.
+* Limpe os diretórios `indices_faiss/`, `charts/` e `consultas/` antes de novos testes.
+* Commits devem conter mensagens claras (`feat:`, `fix:`, `refactor:`, etc).
+* Faça backup regular do banco de dados local.
 
 ---
 
-## Licença
+## 📜 Licença
 
-Este projeto é distribuído sob a licença **MIT**.
-Você pode usar, modificar e redistribuir livremente, desde que mantenha os créditos originais.
+Projeto sob licença MIT.
+Desenvolvido por **Felipe Cidade Soares**.
 
----
-
-## Observação Final
-
-O projeto segue princípios de **modularidade, reprodutibilidade e escalabilidade**, com uma arquitetura que combina **processamento local** (FAISS e SQLAlchemy) com **inteligência artificial baseada em LangChain**.
-A interface gráfica transforma a complexidade técnica em uma experiência acessível e intuitiva, adequada tanto para demonstrações acadêmicas quanto para aplicações reais.
-
----
-
-```
-
----
-
-Quer que eu acrescente também uma seção **“🚀 Extensões futuras”**, listando ideias como adicionar `AnaliseArquivo`, suporte a busca global entre documentos ou exportação em PDF dos resumos? Isso deixa o README mais completo e com visão de evolução.
-```
-
----
-
-## Créditos
-
-Desenvolvido por **Felipe Cidade Soares**
+````
