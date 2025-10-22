@@ -1,3 +1,5 @@
+
+
 ````markdown
 # 🧠 Analisador de Arquivos com IA e SQLAlchemy
 
