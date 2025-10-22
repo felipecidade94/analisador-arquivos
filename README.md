@@ -1,41 +1,46 @@
-````markdown
-# 🧠 Analisador de Arquivos com IA e SQLAlchemy
+# Analisador de Arquivos com IA e SQLAlchemy
 
-Sistema Python para gerenciamento, extração e análise de arquivos utilizando **SQLAlchemy**, **LangChain**, e **FAISS**.  
-O projeto permite **upload de documentos**, **armazenamento em banco de dados**, **extração de texto**, **resumos automáticos**, **criação de embeddings vetoriais** e **consultas SQL com visualização gráfica**.
-
----
-
-## ⚙️ Funcionalidades Principais
-
-- **Upload inteligente**  
-  - Detecção de arquivos duplicados via hash SHA256  
-  - Extração automática de texto (PDF, DOCX, CSV, Excel, TXT e Markdown)  
-  - Geração de resumo inicial e logs detalhados  
-
-- **Banco de dados relacional (SQLAlchemy ORM)**  
-  - Estrutura robusta com entidades relacionadas (`Arquivo`, `ConteudoExtraido`, `Embedding`, `Resumo`, `Pergunta`, `RespostaIA`, `Log`, `ConsultaSQL`, `ResultadoConsulta`)  
-  - Suporte a consultas híbridas ORM + SQL bruto  
-
-- **Consultas SQL customizadas e exportação**  
-  - Execução livre de comandos `SELECT`  
-  - Exportação de resultados em `.xlsx`  
-  - Diretório automático `/consultas` para histórico  
-
-- **Visualização de dados com gráficos (Matplotlib)**  
-  - 3 gráficos prontos:
-    1. Arquivos por tipo  
-    2. Perguntas por arquivo (nomes truncados para 15 caracteres)  
-    3. Tempo médio de resposta por tipo de arquivo  
-  - Eixos formatados e rotação automática das legendas  
-
-- **Integração com embeddings (FAISS + LangChain)**  
-  - Fragmentação de texto (`RecursiveCharacterTextSplitter`)  
-  - Armazenamento e reuso de índices FAISS locais  
+Sistema Python para gerenciamento, extração e análise de arquivos utilizando **SQLAlchemy**, **LangChain**, e **FAISS**.
+O projeto permite upload de documentos, armazenamento em banco de dados, extração de texto, resumos automáticos, criação de embeddings vetoriais e consultas SQL com visualização gráfica.
 
 ---
 
-## 🧩 Diagrama de Classes (Mermaid)
+## Funcionalidades Principais
+
+* **Upload inteligente**
+
+  * Detecção de arquivos duplicados via hash SHA256
+  * Extração automática de texto (PDF, DOCX, CSV, Excel, TXT e Markdown)
+  * Geração de resumo inicial e logs detalhados
+
+* **Banco de dados relacional (SQLAlchemy ORM)**
+
+  * Estrutura robusta com entidades relacionadas (`Arquivo`, `ConteudoExtraido`, `Embedding`, `Resumo`, `Pergunta`, `RespostaIA`, `Log`, `ConsultaSQL`, `ResultadoConsulta`)
+  * Suporte a consultas híbridas ORM + SQL bruto
+
+* **Consultas SQL customizadas e exportação**
+
+  * Execução livre de comandos `SELECT`
+  * Exportação de resultados em `.xlsx`
+  * Diretório automático `/consultas` para histórico
+
+* **Visualização de dados com gráficos (Matplotlib)**
+
+  * Três gráficos prontos:
+
+    1. Arquivos por tipo
+    2. Perguntas por arquivo (nomes truncados para 15 caracteres)
+    3. Tempo médio de resposta por tipo de arquivo
+  * Eixos formatados e rotação automática das legendas
+
+* **Integração com embeddings (FAISS + LangChain)**
+
+  * Fragmentação de texto (`RecursiveCharacterTextSplitter`)
+  * Armazenamento e reuso de índices FAISS locais
+
+---
+
+## Diagrama de Classes (Mermaid)
 
 ```mermaid
 classDiagram
@@ -103,7 +108,7 @@ classDiagram
 
 ---
 
-## 🧰 Estrutura de Pastas
+## Estrutura de Pastas
 
 ```
 analisador-arquivos/
@@ -122,9 +127,9 @@ analisador-arquivos/
 
 ---
 
-## 🚀 Execução
+## Execução
 
-### 1. Crie e ative o ambiente virtual
+### 1. Criar e ativar o ambiente virtual
 
 ```bash
 python -m venv venv
@@ -133,13 +138,13 @@ venv\Scripts\activate   # Windows
 source venv/bin/activate  # Linux/Mac
 ```
 
-### 2. Instale as dependências
+### 2. Instalar as dependências
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Configure o `.env`
+### 3. Configurar o `.env`
 
 Crie um arquivo `.env` na raiz do projeto:
 
@@ -149,7 +154,7 @@ GROQ_API_KEY=sua_chave_aqui
 GROQ_API_MODEL=llama-3-70b
 ```
 
-### 4. Execute o sistema
+### 4. Executar o sistema
 
 ```bash
 python main.py
@@ -159,19 +164,17 @@ O menu interativo CLI será exibido com opções para criar tabelas, enviar arqu
 
 ---
 
-## 🧠 Boas Práticas
+## Boas Práticas
 
-* Sempre use `venv` para isolar dependências.
+* Sempre utilize `venv` para isolar dependências.
 * Mantenha o arquivo `.env` fora do controle de versão.
 * Limpe os diretórios `indices_faiss/`, `charts/` e `consultas/` antes de novos testes.
-* Commits devem conter mensagens claras (`feat:`, `fix:`, `refactor:`, etc).
+* Use mensagens de commit claras e padronizadas (`feat:`, `fix:`, `refactor:` etc).
 * Faça backup regular do banco de dados local.
 
 ---
 
-## 📜 Licença
+## Licença
 
 Projeto sob licença MIT.
 Desenvolvido por **Felipe Cidade Soares**.
-
-````
