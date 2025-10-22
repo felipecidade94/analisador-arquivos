@@ -320,10 +320,17 @@ def run_and_plot(titulo, eixo_x, eixo_y, sql, descricao, chart_type='barras'):
 
 
 def create_all():
+    for p in (INDEX_DIR, CHART_DIR, RESULT_CONSULTA_DIR):
+        if os.path.exists(p):
+            return "[AVISO] Pastas já existem."
+    os.makedirs(INDEX_DIR, exist_ok=True)
+    os.makedirs(CHART_DIR, exist_ok=True)
+    os.makedirs(RESULT_CONSULTA_DIR, exist_ok=True)
     Base.metadata.create_all(engine)
     with engine.begin() as conn:
         for t in ['pdf','docx','xlsx','xls','csv','txt','md']:
             ensure_tipo(conn, t)
+    
     return "[OK] Tabelas criadas."
 
 
@@ -331,6 +338,8 @@ def drop_all():
     Base.metadata.drop_all(engine)
     for p in (INDEX_DIR, CHART_DIR, RESULT_CONSULTA_DIR):
         if os.path.exists(p): shutil.rmtree(p)
+        else:
+            return "[AVISO] Tabelas não encontradas."
     return "[OK] Tabelas e pastas removidas."
 
 
