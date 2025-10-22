@@ -25,11 +25,11 @@ try:
 except Exception:
     fitz = None
 try:
-    import docx  # python-docx
+    import docx  
 except Exception:
     docx = None
 
-# IA / Embeddings
+
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -56,9 +56,6 @@ engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
-# ------------------------------------------------------------
-# Modelos ORM (mantidos)
-# ------------------------------------------------------------
 class TipoArquivo(Base):
     __tablename__ = 'tipo_arquivo'
     id = Column(Integer, primary_key=True)
