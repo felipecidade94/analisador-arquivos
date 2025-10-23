@@ -15,7 +15,7 @@ O projeto permite upload de documentos, armazenamento em banco de dados, extraç
 
 * **Banco de dados relacional (SQLAlchemy ORM)**
 
-  * Estrutura robusta com entidades relacionadas (`Arquivo`, `ConteudoExtraido`, `Embedding`, `Resumo`, `Pergunta`, `RespostaIA`, `Log`, `ConsultaSQL`, `ResultadoConsulta`)
+  * Estrutura robusta com entidades relacionadas (`Arquivo`, `TipoArquivo`, `ConteudoExtraido`, `Embedding`, `Resumo`, `Pergunta`, `RespostaIA`, `Log`, `ConsultaSQL`, `ResultadoConsulta`)
   * Suporte a consultas híbridas ORM + SQL bruto
 
 * **Consultas SQL customizadas e exportação**
@@ -122,7 +122,7 @@ analisador-arquivos/
 ├── indices_faiss/        # Índices vetoriais FAISS
 ├── charts/               # Gráficos gerados
 ├── consultas/            # Resultados de SQL customizados
-└── venv/                 # Ambiente virtual (ignorado no Git)
+└── venv/                 # Ambiente virtual
 ```
 
 ---
@@ -149,9 +149,9 @@ pip install -r requirements.txt
 Crie um arquivo `.env` na raiz do projeto:
 
 ```
-DATABASE_URL=sqlite:///analisador.db
+DATABASE_URL=postgresql+psycopg2://proprietario:senha@localhost:5432/analisador-de-arquivos
 GROQ_API_KEY=sua_chave_aqui
-GROQ_API_MODEL=llama-3-70b
+GROQ_API_MODEL=seu_modelo_aqui
 ```
 
 ### 4. Executar o sistema
