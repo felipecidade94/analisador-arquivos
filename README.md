@@ -159,12 +159,12 @@ GROQ_API_MODEL=seu_modelo_aqui
 ```bash
 python main.py
 ```
+O menu interativo CLI será exibido com opções para criar tabelas, enviar arquivos, consultar, ou gerar gráficos.
 Ou  
 ```bash
 python interface.py
 ```
-
-O menu interativo CLI será exibido com opções para criar tabelas, enviar arquivos, consultar, ou gerar gráficos.
+Interface gráfica utilizando a biblioteca Tkinter
 
 ---
 
