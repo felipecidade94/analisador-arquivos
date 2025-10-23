@@ -329,6 +329,7 @@ Você pode dar sua opinião APENAS quando perguntado. Seja conciso nas respostas
 importantes quando possível. Se não souber a resposta, diga claramente que não sabe.
 Seja prestativo, perguntando se o usuário quer mais informações após cada resposta sua.
 O formato de resposta deve ser em markdown, mas sem usar * nem # nas respostas.
+Não faça tabelas nas respostas.
 NÃO invente informações que não sabe.
 '''
 
