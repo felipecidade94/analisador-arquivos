@@ -1,15 +1,20 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
+import contextlib
 import os
 import io
 import json
 import time
 import hashlib
 import datetime as dt
-from dataclasses import dataclass
-from typing import Optional, List, Tuple
+from typing import Tuple
 from dotenv import load_dotenv
 import shutil
+import stat
+import gc
+import markdown2
+import re
+import matplotlib.pyplot as plt
 
 # Banco de dados
 from sqlalchemy import (
@@ -38,11 +43,7 @@ from langchain_groq import ChatGroq
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="langchain")
-import markdown2
-import re
 
-# Visualização
-import matplotlib.pyplot as plt
 
 # ------------------------------------------------------------
 # Configuração
@@ -62,9 +63,6 @@ engine = create_engine(os.getenv("DATABASE_URL"))
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
-# ------------------------------------------------------------
-# Modelos (10 entidades)
-# ------------------------------------------------------------
 class TipoArquivo(Base):
     __tablename__ = 'tipo_arquivo'
     id = Column(Integer, primary_key=True)
@@ -185,10 +183,6 @@ INDEX_DIR = 'indices_faiss'
 CHART_DIR = 'charts'
 RESULT_CONSULTA_DIR = 'consultas'
 
-os.makedirs(INDEX_DIR, exist_ok=True)
-os.makedirs(CHART_DIR, exist_ok=True)
-os.makedirs(RESULT_CONSULTA_DIR, exist_ok=True)
-
 
 def sha256_bytes(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()
@@ -199,7 +193,7 @@ def infer_tipo_from_name(name: str) -> str:
     return next(
         (
             ext[1:] for ext in (
-                '.pdf', '.docx', '.xlsx', '.xls', '.csv', '.txt', '.md',
+                '.pdf', '.docx','.doc', '.xlsx', '.xls', '.csv', '.txt', '.md',
             )
             if n.endswith(ext)
         ),
@@ -468,8 +462,6 @@ def upload_file(sess, filepath: str) -> int:
     return {'id': arq.id, 'duplicado': False}  # 👈 retorno consistente
 
 
-
-
 # ------------------------------------------------------------
 # Consultas + gráficos
 # ------------------------------------------------------------
@@ -490,15 +482,13 @@ def run_and_plot(titulo, eixo_x, eixo_y, sql: str, descricao: str, chart_type: s
         else:
             plt.bar(x, y)
         plt.xticks(rotation=45, ha='right')
-        plt.tight_layout()
     else:
         for col in df.columns:
             s = pd.to_numeric(df[col], errors='coerce').dropna()
             if not s.empty:
                 plt.hist(s)
                 break
-        plt.tight_layout()
-
+    plt.tight_layout()
     plt.title(titulo, fontsize=12, fontweight='bold', color='black')
     plt.xlabel(eixo_x)
     plt.ylabel(eixo_y)
@@ -509,11 +499,6 @@ def run_and_plot(titulo, eixo_x, eixo_y, sql: str, descricao: str, chart_type: s
     return f'Gráfico salvo em {img_path}'
 
 caminhos = (INDEX_DIR, CHART_DIR, RESULT_CONSULTA_DIR)
-
-import stat
-
-import stat
-import gc
 
 def remove_file(sess, arquivo_id: int) -> str:
     """Remove um arquivo e todos os dados relacionados, dado seu ID."""
@@ -582,28 +567,40 @@ def remove_file(sess, arquivo_id: int) -> str:
         return f"[ERRO] Falha ao remover o arquivo ID={arquivo_id}: {e}"
 
 
-import gc, shutil
-
 def cleanup_indices():
     """Força liberação e remoção de índices FAISS que ficaram travados."""
-    try:
+    with contextlib.suppress(Exception):
         gc.collect()
         time.sleep(0.2)
         for f in os.listdir(INDEX_DIR):
             if f.endswith(".index"):
                 path = os.path.join(INDEX_DIR, f)
-                try:
+                with contextlib.suppress(Exception):
                     os.chmod(path, stat.S_IWRITE)
                     os.remove(path)
                     return f"[LIMPEZA] Índice removido: {path}"
-                except Exception:
-                    pass
-    except Exception:
-        pass
 
 # ------------------------------------------------------------
 # Setup do banco
 # ------------------------------------------------------------
+
+def verificar_banco():
+    return any(os.path.exists(caminho) for caminho in caminhos)
+
+def verificar_tabelas():
+    df = pd.read_sql("SELECT tablename FROM pg_tables WHERE schemaname='public';", con=engine)
+    tabelas_esperadas = {
+        'tipo_arquivo', 'arquivo', 'conteudo_extraido', 'embedding',
+        'pergunta', 'resposta_ia', 'consulta_sql', 'resultado_consulta',
+        'log', 'resumo'
+    }
+    tabelas_existentes = set(df['tablename'].tolist())
+    return tabelas_esperadas.issubset(tabelas_existentes)
+    
+
+
+    
+
 def create_all():
     for caminho in caminhos:
         if os.path.exists(caminho):

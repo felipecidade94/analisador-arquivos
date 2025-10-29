@@ -70,6 +70,11 @@ canvas.pack(side='left', fill='both', expand=True)
 frame_mensagens = tk.Frame(canvas, bg='white')
 canvas.create_window((0, 0), window=frame_mensagens, anchor='nw')
 
+caminhos = ['charts', 'consultas', 'indices_faiss']
+# Função para verificar se as tabelas não estão vazias
+def verificar_banco():
+    return any(os.path.exists(caminho) for caminho in caminhos)
+
 def atualizar_scroll(event=None):
     canvas.configure(scrollregion=canvas.bbox('all'))
 frame_mensagens.bind('<Configure>', atualizar_scroll)
@@ -107,40 +112,39 @@ def criar_tabelas():
         messagebox.showerror('Erro', str(e))
 
 def remover_tabelas():
+    if not m.verificar_banco():
+        msg = 'Não é possível remover as tabelas, porque o banco ainda não existe. Clique no botão "Criar tabelas" para criar o banco.'
+        exibir_mensagem('Sistema', msg)
+        return messagebox.showerror('ERRO', msg)
     conf = messagebox.askyesno('Confirmação', 'Tem certeza que deseja remover todas as tabelas e pastas?')
-    if conf:
-        janela.bell()
-        aviso = messagebox.askyesno('Confirmação', 'Essa ação é irreversível! Deseja continuar?')
-        if aviso:
-            try:
-                msg = m.drop_all()
-                exibir_mensagem('Sistema', msg)
-            except Exception as e:
-                exibir_mensagem('Erro', str(e))
-                messagebox.showerror('Erro', str(e))
-    return
+    if not conf:
+        return messagebox.showerror('ERRO', 'Ação cancelada pelo usuário.')
+    janela.bell()
+    aviso = messagebox.askyesno('AVISO', 'Essa ação é irreversível! Deseja continuar?')
+    if not aviso:
+        return messagebox.showerror('ERRO', 'Ação cancelada pelo usuário.')
+    try:
+        msg = m.drop_all()
+        exibir_mensagem('Sistema', msg)
+        messagebox.showinfo('INFO', msg)
+    except Exception as e:
+        exibir_mensagem('Erro', str(e))
+        messagebox.showerror('Erro', str(e))
+    
 
-def upload_arquivo():
-    # Função para mandar um mensagem de ERRO as tabelas não existirem
-    def verificar_tabelas():
-        try:
-            with m.SessionLocal() as sess:
-                sess.execute('SELECT 1 FROM arquivo LIMIT 1;')
-            return True
-        except Exception:
-            return False
-    if not verificar_tabelas():
-        msg = 'As tabelas do banco de dados não existem. Crie as tabelas antes de fazer upload.'
+def upload_arquivo():    # Função para mandar um mensagem de ERRO caso o banco não exista
+    if not m.verificar_banco():
+        msg = 'Não é possível fazer upload de arquivos, porque o banco ainda não existe. Clique no botão "Criar tabelas" para criar o banco.'
         exibir_mensagem('Erro', msg)
         messagebox.showerror('Erro', msg)
         return
-    
+
     caminho = filedialog.askopenfilename(
         title='Selecione um arquivo',
         filetypes=[
             ('Todos os suportados', '*.pdf; *.docx; *.xlsx; *.xls; *.csv; *.txt; *.md'),
             ('PDF', '*.pdf'),
-            ('DOCX', '*.docx'),
+            ('Word', '*.docx'),
             ('Excel', '*.xlsx;*.xls'),
             ('CSV', '*.csv'),
             ('TXT', '*.txt'),
@@ -164,13 +168,13 @@ def upload_arquivo():
 
                 # Exibir apenas o último log do arquivo
         df_logs = pd.read_sql_query(
-            f"""
+            f'''
             SELECT acao, detalhe, data 
             FROM log 
             WHERE arquivo_id={arq_id} 
             ORDER BY data DESC 
             LIMIT 1
-            """,
+            ''',
             con=m.engine
         )
 
@@ -182,26 +186,15 @@ def upload_arquivo():
             hora = pd.to_datetime(log['data']).strftime('%d-%m-%y-%H:%M:%S')
             exibir_mensagem('Log', f"[{hora}] {log['acao']} → {log['detalhe']}", cor)
 
-
-
     except Exception as e:
         exibir_mensagem('Erro', str(e))
         messagebox.showerror('Erro', str(e))
 
-
 id_arquivo_escolhido = None
 
 def perguntar_arquivo():
-    
-    def verificar_tabelas():
-        try:
-            with m.SessionLocal() as sess:
-                sess.execute('SELECT 1 FROM arquivo LIMIT 1;')
-            return True
-        except Exception:
-            return False
-    if not verificar_tabelas():
-        msg = 'As tabelas do banco de dados não existem. Crie as tabelas antes de fazer upload.'
+    if not m.verificar_banco():
+        msg = 'Não é possível perguntar sobre arquivos, porque o banco ainda não existe. Clique no botão "Criar tabelas" para criar o banco.'
         exibir_mensagem('Erro', msg)
         messagebox.showerror('Erro', msg)
         return
@@ -222,7 +215,7 @@ def perguntar_arquivo():
         return
 
     if df.empty:
-        messagebox.showinfo('Aviso', 'Nenhum arquivo encontrado. Faça upload primeiro.')
+        messagebox.showerror('ERRO', 'Nenhum arquivo encontrado. Faça upload primeiro.')
         janela_id.destroy()
         return
 
@@ -246,7 +239,6 @@ def perguntar_arquivo():
 
     ttk.Button(janela_id, text='Confirmar', style='Custom.TButton', command=confirmar).pack(pady=10)
 
-
 def enviar_pergunta():
     global id_arquivo_escolhido
     pergunta = entry_enviar.get().strip()
@@ -265,21 +257,24 @@ def enviar_pergunta():
         exibir_mensagem('Erro', str(e))
         messagebox.showerror('Erro', str(e))
 
-def consultas_prontas():
-    
-    def verificar_tabelas():
-        try:
-            with m.SessionLocal() as sess:
-                sess.execute('SELECT 1 FROM arquivo LIMIT 1;')
-            return True
-        except Exception:
-            return False
-    if not verificar_tabelas():
-        msg = 'As tabelas do banco de dados não existem. Crie as tabelas antes de fazer upload.'
+def graficos_prontos():
+    if not m.verificar_banco():
+        msg = 'Não é possível gerar os gráficos prontos, porque o banco ainda não existe. Clique no botão "Criar tabelas" para criar o banco.'
         exibir_mensagem('Erro', msg)
         messagebox.showerror('Erro', msg)
         return
     
+    try:
+        df = pd.read_sql_query('SELECT id, nome FROM arquivo ORDER BY id DESC', con=m.engine)
+    except Exception as e:
+        exibir_mensagem('Erro', f'Erro ao gerar os gráficos: {e}')
+        messagebox.showerror('Erro', str(e))
+        return
+
+    if df.empty:
+        messagebox.showerror('Aviso', 'Nenhum arquivo encontrado. Faça upload primeiro.')
+        return
+
     exibir_mensagem('Sistema', 'Executando consultas e gráficos prontos...')
     try:
         # Usa diretamente as funções do main.py
@@ -334,16 +329,8 @@ def consultas_prontas():
         messagebox.showerror('Erro', str(e))
 
 def consulta_sql():
-    
-    def verificar_tabelas():
-        try:
-            with m.SessionLocal() as sess:
-                sess.execute('SELECT 1 FROM arquivo LIMIT 1;')
-            return True
-        except Exception:
-            return False
-    if not verificar_tabelas():
-        msg = 'As tabelas do banco de dados não existem. Crie as tabelas antes de fazer upload.'
+    if not m.verificar_banco():
+        msg = 'Não é possível executar consultas, porque as tabelas do banco estão vazias. Faça upload de novos arquivos para fazer fazer perguntas.'
         exibir_mensagem('Erro', msg)
         messagebox.showerror('Erro', msg)
         return
@@ -354,6 +341,20 @@ def consulta_sql():
     janela_sql.transient(janela)
     janela_sql.grab_set()
 
+    try:
+        df = pd.read_sql_query('''SELECT a.id as id,
+                                a.nome as nome
+                                FROM arquivo a
+                                ORDER BY nome''', con=m.engine)
+        if df.empty:
+            messagebox.showerror('ERRO', 'Nenhum arquivo disponível para consulta.')
+            janela_sql.destroy()
+            return
+    except Exception as e:
+        messagebox.showerror('Erro', f'Falha ao buscar arquivos: {e}')
+        janela_sql.destroy()
+        return
+    
     ttk.Label(janela_sql, text='Digite uma consulta SELECT:').pack(pady=10)
     entry_sql = tk.Text(janela_sql, height=15, width=80, font=('Consolas', 10))
     entry_sql.pack(padx=10, fill='both', expand=True)
@@ -379,22 +380,13 @@ def consulta_sql():
 
     ttk.Button(janela_sql, text='Executar', style='Custom.TButton', command=executar).pack(pady=10)
 
-
 def remover_arquivo():
-    
-    def verificar_tabelas():
-        try:
-            with m.SessionLocal() as sess:
-                sess.execute('SELECT 1 FROM arquivo LIMIT 1;')
-            return True
-        except Exception:
-            return False
-    if not verificar_tabelas():
-        msg = 'As tabelas do banco de dados não existem. Crie as tabelas antes de fazer upload.'
+    if not m.verificar_banco():
+        msg = 'Não é possível remover arquivos, porque o banco ainda não existe. Clique no botão "Criar tabelas" para criar o banco.'
         exibir_mensagem('Erro', msg)
         messagebox.showerror('Erro', msg)
         return
-    
+
     """Abre uma janela para remover um arquivo existente pelo ID."""
     janela_remover = tk.Toplevel(janela)
     janela_remover.title('Remover arquivo')
@@ -406,7 +398,7 @@ def remover_arquivo():
                                 FROM arquivo a
                                 ORDER BY nome''', con=m.engine)
         if df.empty:
-            messagebox.showinfo('Info', 'Nenhum arquivo disponível para remoção.')
+            messagebox.showerror('ERRO', 'Nenhum arquivo disponível para remoção.')
             janela_remover.destroy()
             return
     except Exception as e:
@@ -442,16 +434,14 @@ def remover_arquivo():
     ttk.Button(janela_remover, text='Remover', style='Custom.TButton', command=confirmar_remocao).pack(pady=15)
 
 def listar_arquivos():
-    
-    def verificar_tabelas():
-        try:
-            with m.SessionLocal() as sess:
-                sess.execute('SELECT 1 FROM arquivo LIMIT 1;')
-            return True
-        except Exception:
-            return False
-    if not verificar_tabelas():
-        msg = 'As tabelas do banco de dados não existem. Crie as tabelas antes de fazer upload.'
+    if not m.verificar_banco():
+        msg = 'Não é possível listar os arquivos, porque o banco ainda não existe. Clique no botão "Criar tabelas" para criar o banco.'
+        exibir_mensagem('Erro', msg)
+        messagebox.showerror('Erro', msg)
+        return
+
+    if not m.verificar_tabelas():
+        msg = 'Não é possível listar os arquivos, porque as tabelas estão vazias. Faça upload de novos arquivos primeiro.'
         exibir_mensagem('Erro', msg)
         messagebox.showerror('Erro', msg)
         return
@@ -466,7 +456,7 @@ def listar_arquivos():
         lista_arquivos_nomes = df_arquivos['nome'].tolist()
         arquivos = '\n'.join(f'ID: {id} | Nome: {nome}' for id, nome in zip(lista_arquivos_ids, lista_arquivos_nomes))
         if df_arquivos.empty:
-            messagebox.showinfo('Aviso', 'Nenhum arquivo encontrado. Faça upload primeiro.')
+            messagebox.showerror('ERRO', 'Nenhum arquivo encontrado. Faça upload primeiro.')
             return
     except Exception as e:
         exibir_mensagem('Erro', str(e))
@@ -490,7 +480,7 @@ botoes = {
     'Listar arquivos': listar_arquivos,
     'Upload de arquivo': upload_arquivo,
     'Perguntar sobre um arquivo': perguntar_arquivo,
-    '3 Gráficos prontos': consultas_prontas,
+    '3 Gráficos prontos': graficos_prontos,
     'Consulta SQL customizada': consulta_sql,
     'Sair': sair,
 }
