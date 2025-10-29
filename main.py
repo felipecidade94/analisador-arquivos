@@ -44,7 +44,6 @@ import re
 # Visualização
 import matplotlib.pyplot as plt
 
-
 # ------------------------------------------------------------
 # Configuração
 # ------------------------------------------------------------
@@ -62,7 +61,6 @@ if not GROQ_API_KEY:
 engine = create_engine(os.getenv("DATABASE_URL"))
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
-
 
 # ------------------------------------------------------------
 # Modelos (10 entidades)
@@ -520,6 +518,7 @@ import gc
 def remove_file(sess, arquivo_id: int) -> str:
     """Remove um arquivo e todos os dados relacionados, dado seu ID."""
     arq = sess.get(Arquivo, arquivo_id)
+
     if not arq:
         return f"[ERRO] Nenhum arquivo encontrado com ID={arquivo_id}."
 

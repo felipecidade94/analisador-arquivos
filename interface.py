@@ -7,7 +7,6 @@ import pandas as pd
 import time
 import main as m
 
-
 # ============================================================
 # JANELA PRINCIPAL
 # ============================================================
@@ -108,15 +107,34 @@ def criar_tabelas():
         messagebox.showerror('Erro', str(e))
 
 def remover_tabelas():
-    if messagebox.askyesno('Confirmação', 'Tem certeza que deseja remover todas as tabelas e pastas?'):
-        try:
-            msg = m.drop_all()
-            exibir_mensagem('Sistema', msg)
-        except Exception as e:
-            exibir_mensagem('Erro', str(e))
-            messagebox.showerror('Erro', str(e))
+    conf = messagebox.askyesno('Confirmação', 'Tem certeza que deseja remover todas as tabelas e pastas?')
+    if conf:
+        janela.bell()
+        aviso = messagebox.askyesno('Confirmação', 'Essa ação é irreversível! Deseja continuar?')
+        if aviso:
+            try:
+                msg = m.drop_all()
+                exibir_mensagem('Sistema', msg)
+            except Exception as e:
+                exibir_mensagem('Erro', str(e))
+                messagebox.showerror('Erro', str(e))
+    return
 
 def upload_arquivo():
+    # Função para mandar um mensagem de ERRO as tabelas não existirem
+    def verificar_tabelas():
+        try:
+            with m.SessionLocal() as sess:
+                sess.execute('SELECT 1 FROM arquivo LIMIT 1;')
+            return True
+        except Exception:
+            return False
+    if not verificar_tabelas():
+        msg = 'As tabelas do banco de dados não existem. Crie as tabelas antes de fazer upload.'
+        exibir_mensagem('Erro', msg)
+        messagebox.showerror('Erro', msg)
+        return
+    
     caminho = filedialog.askopenfilename(
         title='Selecione um arquivo',
         filetypes=[
@@ -161,7 +179,7 @@ def upload_arquivo():
             cor = '#ffe6e6' if 'erro' in log['acao'].lower() else '#e6ffe6'
             if 'duplicado' in log['acao'].lower():
                 cor = '#fff8dc'  # amarelo claro para duplicado
-            hora = pd.to_datetime(log['data']).strftime('%H:%M:%S')
+            hora = pd.to_datetime(log['data']).strftime('%d-%m-%y-%H:%M:%S')
             exibir_mensagem('Log', f"[{hora}] {log['acao']} → {log['detalhe']}", cor)
 
 
@@ -174,6 +192,21 @@ def upload_arquivo():
 id_arquivo_escolhido = None
 
 def perguntar_arquivo():
+    
+    def verificar_tabelas():
+        try:
+            with m.SessionLocal() as sess:
+                sess.execute('SELECT 1 FROM arquivo LIMIT 1;')
+            return True
+        except Exception:
+            return False
+    if not verificar_tabelas():
+        msg = 'As tabelas do banco de dados não existem. Crie as tabelas antes de fazer upload.'
+        exibir_mensagem('Erro', msg)
+        messagebox.showerror('Erro', msg)
+        return
+    
+    
     global id_arquivo_escolhido
     janela_id = tk.Toplevel(janela)
     janela_id.title('Selecionar arquivo para perguntas')
@@ -233,6 +266,20 @@ def enviar_pergunta():
         messagebox.showerror('Erro', str(e))
 
 def consultas_prontas():
+    
+    def verificar_tabelas():
+        try:
+            with m.SessionLocal() as sess:
+                sess.execute('SELECT 1 FROM arquivo LIMIT 1;')
+            return True
+        except Exception:
+            return False
+    if not verificar_tabelas():
+        msg = 'As tabelas do banco de dados não existem. Crie as tabelas antes de fazer upload.'
+        exibir_mensagem('Erro', msg)
+        messagebox.showerror('Erro', msg)
+        return
+    
     exibir_mensagem('Sistema', 'Executando consultas e gráficos prontos...')
     try:
         # Usa diretamente as funções do main.py
@@ -287,6 +334,20 @@ def consultas_prontas():
         messagebox.showerror('Erro', str(e))
 
 def consulta_sql():
+    
+    def verificar_tabelas():
+        try:
+            with m.SessionLocal() as sess:
+                sess.execute('SELECT 1 FROM arquivo LIMIT 1;')
+            return True
+        except Exception:
+            return False
+    if not verificar_tabelas():
+        msg = 'As tabelas do banco de dados não existem. Crie as tabelas antes de fazer upload.'
+        exibir_mensagem('Erro', msg)
+        messagebox.showerror('Erro', msg)
+        return
+    
     janela_sql = tk.Toplevel(janela)
     janela_sql.title('Consulta SQL customizada')
     janela_sql.geometry('600x450')
@@ -318,32 +379,32 @@ def consulta_sql():
 
     ttk.Button(janela_sql, text='Executar', style='Custom.TButton', command=executar).pack(pady=10)
 
-def enviar_pergunta():
-    global id_arquivo_escolhido
-    pergunta = entry_enviar.get().strip()
-    if not pergunta:
-        return
-    if id_arquivo_escolhido is None:
-        messagebox.showwarning('Aviso', 'Selecione um arquivo antes de perguntar.')
-        return
-    exibir_mensagem('Você', pergunta)
-    entry_enviar.delete(0, tk.END)
-    try:
-        with m.SessionLocal() as sess:
-            resposta = m.answer_question(sess, id_arquivo_escolhido, pergunta)
-        exibir_mensagem('IA', resposta)
-    except Exception as e:
-        exibir_mensagem('Erro', str(e))
-        messagebox.showerror('Erro', str(e))
 
 def remover_arquivo():
+    
+    def verificar_tabelas():
+        try:
+            with m.SessionLocal() as sess:
+                sess.execute('SELECT 1 FROM arquivo LIMIT 1;')
+            return True
+        except Exception:
+            return False
+    if not verificar_tabelas():
+        msg = 'As tabelas do banco de dados não existem. Crie as tabelas antes de fazer upload.'
+        exibir_mensagem('Erro', msg)
+        messagebox.showerror('Erro', msg)
+        return
+    
     """Abre uma janela para remover um arquivo existente pelo ID."""
     janela_remover = tk.Toplevel(janela)
     janela_remover.title('Remover arquivo')
     janela_remover.geometry('380x200')
 
     try:
-        df = pd.read_sql_query("SELECT id, nome FROM arquivo", con=m.engine)
+        df = pd.read_sql_query('''SELECT a.id as id,
+                                a.nome as nome
+                                FROM arquivo a
+                                ORDER BY nome''', con=m.engine)
         if df.empty:
             messagebox.showinfo('Info', 'Nenhum arquivo disponível para remoção.')
             janela_remover.destroy()
@@ -363,19 +424,61 @@ def remover_arquivo():
             messagebox.showwarning('Aviso', 'Selecione um arquivo.')
             return
         arq_id = int(df.loc[df['nome'] == nome, 'id'].iloc[0])
-        if not messagebox.askyesno('Confirmação', f'Tem certeza que deseja remover o arquivo "{nome}" (ID={arq_id})?'):
-            return
-        with m.SessionLocal() as sess:
-            resultado = m.remove_file(sess, arq_id)
-        exibir_mensagem('Sistema', resultado)
-        if '[OK]' in resultado:
-            messagebox.showinfo('Sucesso', resultado)
-        else:
-            messagebox.showerror('Erro', resultado)
-        janela_remover.destroy()
+        conf = messagebox.askyesno('Confirmação', f'Tem certeza que deseja remover o arquivo "{nome}" (ID={arq_id})?')
+        if conf:
+            janela_remover.bell()
+            aviso = messagebox.askyesno('Confirmação', 'Essa ação é irreversível! Deseja continuar?')
+            if aviso:
+                with m.SessionLocal() as sess:
+                    resultado = m.remove_file(sess, arq_id)
+                exibir_mensagem('Sistema', resultado)
+                if '[OK]' in resultado:
+                    messagebox.showinfo('Sucesso', resultado)
+                else:
+                    messagebox.showerror('Erro', resultado)
+                janela_remover.destroy()
+        return
 
     ttk.Button(janela_remover, text='Remover', style='Custom.TButton', command=confirmar_remocao).pack(pady=15)
 
+def listar_arquivos():
+    
+    def verificar_tabelas():
+        try:
+            with m.SessionLocal() as sess:
+                sess.execute('SELECT 1 FROM arquivo LIMIT 1;')
+            return True
+        except Exception:
+            return False
+    if not verificar_tabelas():
+        msg = 'As tabelas do banco de dados não existem. Crie as tabelas antes de fazer upload.'
+        exibir_mensagem('Erro', msg)
+        messagebox.showerror('Erro', msg)
+        return
+    
+    try:
+        df_arquivos = pd.read_sql_query('''
+            SELECT a.id, a.nome
+            FROM arquivo a  
+            ORDER BY a.id
+        ''', m.engine)
+        lista_arquivos_ids = df_arquivos['id'].tolist()
+        lista_arquivos_nomes = df_arquivos['nome'].tolist()
+        arquivos = '\n'.join(f'ID: {id} | Nome: {nome}' for id, nome in zip(lista_arquivos_ids, lista_arquivos_nomes))
+        if df_arquivos.empty:
+            messagebox.showinfo('Aviso', 'Nenhum arquivo encontrado. Faça upload primeiro.')
+            return
+    except Exception as e:
+        exibir_mensagem('Erro', str(e))
+        messagebox.showerror('Erro', str(e))
+        return
+    
+    messagebox.showinfo('Lista de Arquivos', arquivos)
+
+def sair():
+    sair = messagebox.askyesno('SAIR', 'Tem certeza que deseja sair?')
+    if sair:
+        janela.destroy()
 
 # ============================================================
 # BOTÕES DO MENU
@@ -384,11 +487,12 @@ botoes = {
     'Criar tabelas': criar_tabelas,
     'Remover tabelas': remover_tabelas,
     'Remover arquivo': remover_arquivo,
+    'Listar arquivos': listar_arquivos,
     'Upload de arquivo': upload_arquivo,
     'Perguntar sobre um arquivo': perguntar_arquivo,
     '3 Gráficos prontos': consultas_prontas,
     'Consulta SQL customizada': consulta_sql,
-    'Sair': janela.destroy
+    'Sair': sair,
 }
 
 for nome, funcao in botoes.items():
