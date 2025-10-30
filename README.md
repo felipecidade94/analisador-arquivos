@@ -12,18 +12,15 @@ O projeto permite upload de documentos, armazenamento em banco de dados, extraç
   * Detecção de arquivos duplicados via hash SHA256
   * Extração automática de texto (PDF, DOCX, CSV, Excel, TXT e Markdown)
   * Geração de resumo inicial e logs detalhados
-
 * **Banco de dados relacional (SQLAlchemy ORM)**
 
   * Estrutura robusta com entidades relacionadas (`Arquivo`, `TipoArquivo`, `ConteudoExtraido`, `Embedding`, `Resumo`, `Pergunta`, `RespostaIA`, `Log`, `ConsultaSQL`, `ResultadoConsulta`)
   * Suporte a consultas híbridas ORM + SQL bruto
-
 * **Consultas SQL customizadas e exportação**
 
   * Execução livre de comandos `SELECT`
   * Exportação de resultados em `.xlsx`
   * Diretório automático `/consultas` para histórico
-
 * **Visualização de dados com gráficos (Matplotlib)**
 
   * Três gráficos prontos:
@@ -32,7 +29,6 @@ O projeto permite upload de documentos, armazenamento em banco de dados, extraç
     2. Perguntas por arquivo (nomes truncados para 15 caracteres)
     3. Tempo médio de resposta por tipo de arquivo
   * Eixos formatados e rotação automática das legendas
-
 * **Integração com embeddings (FAISS + LangChain)**
 
   * Fragmentação de texto (`RecursiveCharacterTextSplitter`)
@@ -114,7 +110,7 @@ classDiagram
 analisador-arquivos/
 │
 ├── main.py
-├── interface.py
+├── app.py
 ├── .env
 ├── .gitignore
 ├── requirements.txt
@@ -159,12 +155,13 @@ GROQ_API_MODEL=seu_modelo_aqui
 ```bash
 python main.py
 ```
-O menu interativo CLI será exibido com opções para criar tabelas, enviar arquivos, consultar, ou gerar gráficos.  
-  
-  
+
+O menu interativo CLI será exibido com opções para criar tabelas, enviar arquivos, consultar, ou gerar gráficos.
+
 ```bash
-python interface.py
+python app.py
 ```
+
 Interface gráfica utilizando a biblioteca Tkinter
 
 ---
