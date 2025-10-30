@@ -71,9 +71,6 @@ frame_mensagens = tk.Frame(canvas, bg='white')
 canvas.create_window((0, 0), window=frame_mensagens, anchor='nw')
 
 caminhos = ['charts', 'consultas', 'indices_faiss']
-# Função para verificar se as tabelas não estão vazias
-def verificar_banco():
-    return any(os.path.exists(caminho) for caminho in caminhos)
 
 def atualizar_scroll(event=None):
     canvas.configure(scrollregion=canvas.bbox('all'))
