@@ -15,26 +15,24 @@ import gc
 import markdown2
 import re
 import matplotlib.pyplot as plt
+import pandas as pd
 
-# Banco de dados
 from sqlalchemy import (
     create_engine, Column, Integer, String, Text, LargeBinary,
     DateTime, ForeignKey, Float, JSON, func
 )
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
-# Extração de conteúdo
-import pandas as pd
+
 try:
-    import fitz  # PyMuPDF
+    import fitz 
 except Exception:
     fitz = None
 try:
-    import docx  # python-docx
+    import docx
 except Exception:
     docx = None
 
-# IA / Embeddings / RAG
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from langchain_community.vectorstores import FAISS
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -45,9 +43,6 @@ import warnings
 warnings.filterwarnings("ignore", category=UserWarning, module="langchain")
 
 
-# ------------------------------------------------------------
-# Configuração
-# ------------------------------------------------------------
 load_dotenv()
 DATABASE_URL = os.getenv('DATABASE_URL')
 GROQ_API_KEY = os.getenv('GROQ_API_KEY')
@@ -173,16 +168,12 @@ class Resumo(Base):
     arquivo = relationship('Arquivo', back_populates='resumo')
 
 
-# ------------------------------------------------------------
-# Utilitários
-# ------------------------------------------------------------
 CHUNK_SIZE = 1200
 CHUNK_OVERLAP = 150
 EMBEDDING_MODEL = 'sentence-transformers/all-MiniLM-L6-v2'
 INDEX_DIR = 'indices_faiss'
 CHART_DIR = 'charts'
 RESULT_CONSULTA_DIR = 'consultas'
-
 
 def sha256_bytes(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()
@@ -193,7 +184,7 @@ def infer_tipo_from_name(name: str) -> str:
     return next(
         (
             ext[1:] for ext in (
-                '.pdf', '.docx','.doc', '.xlsx', '.xls', '.csv', '.txt', '.md',
+                '.pdf', '.docx', '.doc', '.xlsx', '.xls', '.csv', '.txt', '.md',
             )
             if n.endswith(ext)
         ),
@@ -210,9 +201,6 @@ def ensure_tipo(sess, nome_tipo: str) -> TipoArquivo:
     return obj
 
 
-# ------------------------------------------------------------
-# Extração de conteúdo
-# ------------------------------------------------------------
 def extract_text_from_pdf(data: bytes) -> str:
     if not fitz:
         raise RuntimeError('PyMuPDF não instalado. pip install pymupdf')
@@ -237,13 +225,12 @@ def extract_text_from_csv(data: bytes) -> str:
 
 
 def extract_text_from_excel(data: bytes) -> str:
+    # versão mais robusta, evita depender de to_markdown
     bio = io.BytesIO(data)
     dfs = pd.read_excel(bio, sheet_name=None)
     parts = []
-    parts.extend(
-        f"# Sheet: {sheet}\n" + df.to_markdown(index=False)
-        for sheet, df in dfs.items()
-    )
+    for sheet, df in dfs.items():
+        parts.append(f"# Sheet: {sheet}\n" + df.to_csv(index=False))
     return '\n\n'.join(parts)
 
 
@@ -282,16 +269,23 @@ def extract_content_by_type(tipo: str, data: bytes) -> str:
     if tipo == 'md':
         return extract_text_from_md(data)
     return ''
+
+
 # ------------------------------------------------------------
 # Embeddings / Índice por arquivo
 # ------------------------------------------------------------
 def build_or_load_index_for_file(sess, conteudo: ConteudoExtraido) -> Tuple[FAISS, str]:
-    """Gera chunks e constrói um índice FAISS por arquivo."""
+    """Gera chunks e constrói um índice FAISS por arquivo, apenas se houver texto."""
     texto = conteudo.texto or ''
     splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
     docs = splitter.create_documents([texto])
-    emb = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
 
+    # filtra documentos vazios
+    docs = [d for d in docs if getattr(d, "page_content", "").strip()]
+    if not docs:
+        raise ValueError('O arquivo não possui conteúdo indexável, a extração retornou texto vazio.')
+
+    emb = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
     index_path = os.path.join(INDEX_DIR, f'faiss_{conteudo.arquivo_id}.index')
     if os.path.exists(index_path):
         vs = FAISS.load_local(index_path, emb, allow_dangerous_deserialization=True)
@@ -316,13 +310,7 @@ def build_or_load_index_for_file(sess, conteudo: ConteudoExtraido) -> Tuple[FAIS
 # Perguntas e respostas (Groq + RAG)
 # ------------------------------------------------------------
 SYSTEM_PROMPT = '''
-Você é um assistente que responde com base no arquivo fornecido, de forma amigável.
-Você pode dar sua opinião APENAS quando perguntado. Seja conciso nas respostas e traga pontos
-importantes quando possível. Se não souber a resposta, diga claramente que não sabe.
-Seja prestativo, perguntando se o usuário quer mais informações após cada resposta sua.
-O formato de resposta deve ser em markdown, mas sem usar * nem # nas respostas.
-Não faça tabelas nas respostas.
-NÃO invente informações que não sabe.
+Você é um assistente que responde com base no arquivo fornecido, de forma amigável. Você pode dar sua opinião APENAS quando perguntado. Seja conciso nas respostas e traga pontos importantes quando possível. Se não souber a resposta, diga claramente que não sabe. Seja prestativo, perguntando se o usuário quer mais informações após cada resposta sua. O formato de resposta deve ser em markdown, mas sem usar * nem # nas respostas. Quando achar necessário, pode criar tabelas, contudo não exagere, também é muito importante escrever normalmente!! NÃO invente informações que não sabe.
 '''
 
 def answer_question(sess, arquivo_id: int, pergunta_texto: str) -> str:
@@ -336,20 +324,37 @@ def answer_question(sess, arquivo_id: int, pergunta_texto: str) -> str:
 
     start = time.time()
 
-    embedding_meta = (
-        sess.query(Embedding)
-        .join(ConteudoExtraido)
-        .filter(ConteudoExtraido.arquivo_id == arquivo_id)
-        .one_or_none()
-    )
+    # tenta carregar ou construir o índice de forma segura
+    try:
+        embedding_meta = (
+            sess.query(Embedding)
+            .join(ConteudoExtraido)
+            .filter(ConteudoExtraido.arquivo_id == arquivo_id)
+            .one_or_none()
+        )
 
-    if not embedding_meta or not os.path.exists(embedding_meta.index_path):
-        vs, _ = build_or_load_index_for_file(sess, arq.conteudo_extraido)
-    else:
-        emb = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
-        vs = FAISS.load_local(embedding_meta.index_path, emb, allow_dangerous_deserialization=True)
+        if not embedding_meta or not os.path.exists(getattr(embedding_meta, "index_path", "")):
+            vs, _ = build_or_load_index_for_file(sess, arq.conteudo_extraido)
+        else:
+            emb = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
+            vs = FAISS.load_local(embedding_meta.index_path, emb, allow_dangerous_deserialization=True)
+    except Exception as e:
+        sess.add(Log(arquivo_id=arquivo_id, acao='erro_indexacao', detalhe=str(e))); sess.commit()
+        resp_texto = f'Não consegui indexar este arquivo. Motivo: {e}'
+        sess.add(RespostaIA(pergunta_id=q.id, resposta=resp_texto, tempo_execucao=time.time()-start)); sess.commit()
+        return resp_texto
 
-    retrieved_docs = vs.similarity_search(pergunta_texto, k=5)
+    try:
+        retrieved_docs = vs.similarity_search(pergunta_texto, k=5)
+    except Exception as e:
+        retrieved_docs = []
+        sess.add(Log(arquivo_id=arquivo_id, acao='erro_busca', detalhe=str(e))); sess.commit()
+
+    if not retrieved_docs:
+        resp_texto = 'Não encontrei trechos relevantes neste arquivo para responder. Tente outra pergunta ou verifique se o conteúdo foi extraído corretamente.'
+        sess.add(RespostaIA(pergunta_id=q.id, resposta=resp_texto, tempo_execucao=time.time()-start)); sess.commit()
+        return resp_texto
+
     context = '\n\n'.join(d.page_content for d in retrieved_docs)
 
     if not GROQ_API_KEY:
@@ -377,11 +382,9 @@ def answer_question(sess, arquivo_id: int, pergunta_texto: str) -> str:
     return resposta_texto
 
 
-# ------------------------------------------------------------
-# Upload e processamento
-# ------------------------------------------------------------
-tipos_arquivos = ['pdf', 'txt', 'xlsx', 'xls', 'docx', 'md']
-def upload_file(sess, filepath: str) -> int:
+tipos_arquivos = ['pdf', 'txt', 'xlsx', 'xls', 'docx', 'md', 'csv']
+
+def upload_file(sess, filepath: str) -> dict:
     with open(filepath, 'rb') as f:
         data = f.read()
 
@@ -392,15 +395,14 @@ def upload_file(sess, filepath: str) -> int:
 
     if tipo_nome not in tipos_arquivos:
         return 'Formato de arquivo não suportado!'
-    # Verifica se o nome já existe no banco
+
     existente = sess.query(Arquivo).filter_by(nome=nome).one_or_none()
     if existente:
         sess.add(Log(arquivo_id=existente.id, acao='upload_duplicado', detalhe=f'Arquivo {nome} já existe no banco.'))
         sess.commit()
         print(f'[INFO] Arquivo "{nome}" já existe (ID={existente.id}). Pulando upload.')
-        return {'id': existente.id, 'duplicado': True}  # 👈 retorno diferente
+        return {'id': existente.id, 'duplicado': True}
 
-    # Upload normal
     arq = Arquivo(
         nome=nome,
         tipo_id=tipo.id,
@@ -424,7 +426,11 @@ def upload_file(sess, filepath: str) -> int:
     sess.commit()
 
     try:
-        build_or_load_index_for_file(sess, c)
+        if texto.strip():
+            build_or_load_index_for_file(sess, c)
+        else:
+            sess.add(Log(arquivo_id=arq.id, acao='conteudo_vazio', detalhe='Nenhum texto extraído para indexar'))
+            sess.commit()
     except Exception as e:
         sess.add(Log(arquivo_id=arq.id, acao='erro_indexacao', detalhe=str(e)))
         sess.commit()
@@ -459,12 +465,9 @@ def upload_file(sess, filepath: str) -> int:
     sess.commit()
 
     print(f'[OK] Upload, processamento e resumo concluídos. ID={arq.id}')
-    return {'id': arq.id, 'duplicado': False}  # 👈 retorno consistente
+    return {'id': arq.id, 'duplicado': False}
 
 
-# ------------------------------------------------------------
-# Consultas + gráficos
-# ------------------------------------------------------------
 def run_and_plot(titulo, eixo_x, eixo_y, sql: str, descricao: str, chart_type: str = 'barras') -> None:
     df = pd.read_sql(sql, con=engine)
     os.makedirs(CHART_DIR, exist_ok=True)
@@ -519,13 +522,11 @@ def remove_file(sess, arquivo_id: int) -> str:
                     os.remove(emb.index_path)
                 except PermissionError:
                     try:
-                        # Se o arquivo estiver bloqueado, renomeia e agenda para remoção
                         temp_path = emb.index_path + f".old_{int(time.time())}"
                         os.rename(emb.index_path, temp_path)
                         time.sleep(0.1)
                         os.remove(temp_path)
                     except Exception:
-                        # Último recurso: marca para limpeza futura
                         pendente = emb.index_path + ".pending_delete"
                         try:
                             os.rename(emb.index_path, pendente)
@@ -533,7 +534,6 @@ def remove_file(sess, arquivo_id: int) -> str:
                             pass
                 sess.delete(emb)
 
-        # Remover respostas e perguntas
         perguntas = sess.query(Pergunta).filter_by(arquivo_id=arquivo_id).all()
         for p in perguntas:
             if p.resposta:
@@ -544,19 +544,15 @@ def remove_file(sess, arquivo_id: int) -> str:
         if arq.resumo:
             sess.delete(arq.resumo)
 
-        # Remover logs
         logs = sess.query(Log).filter_by(arquivo_id=arquivo_id).all()
         for l in logs:
             sess.delete(l)
 
-        # Remover conteúdo extraído
         if arq.conteudo_extraido:
             sess.delete(arq.conteudo_extraido)
 
-        # Por fim, remover o próprio arquivo
         sess.delete(arq)
 
-        # Commit e log da ação
         sess.add(Log(acao="arquivo_removido", detalhe=f"Arquivo ID={arquivo_id} removido com sucesso."))
         sess.commit()
 
@@ -580,11 +576,9 @@ def cleanup_indices():
                     os.remove(path)
                     return f"[LIMPEZA] Índice removido: {path}"
 
-# ------------------------------------------------------------
-# Setup do banco
-# ------------------------------------------------------------
 
 def verificar_banco():
+    # considera criado se ao menos uma das pastas base existir
     return any(os.path.exists(caminho) for caminho in caminhos)
 
 def verificar_tabelas():
@@ -596,15 +590,12 @@ def verificar_tabelas():
     }
     tabelas_existentes = set(df['tablename'].tolist())
     return tabelas_esperadas.issubset(tabelas_existentes)
-    
 
-
-    
 
 def create_all():
     for caminho in caminhos:
         if os.path.exists(caminho):
-            return '[INFO] Tabelas já foram criadas!' 
+            return '[INFO] Tabelas já foram criadas!'
     os.makedirs(INDEX_DIR, exist_ok=True)
     os.makedirs(CHART_DIR, exist_ok=True)
     os.makedirs(RESULT_CONSULTA_DIR, exist_ok=True)
@@ -619,7 +610,7 @@ def create_all():
 def drop_all():
     for caminho in caminhos:
         if not os.path.exists(caminho):
-            return '[INFO] Tabelas não encontradas!' 
+            return '[INFO] Tabelas não encontradas!'
     Base.metadata.drop_all(engine)
     for caminho in caminhos:
         if os.path.exists(caminho):
@@ -627,9 +618,6 @@ def drop_all():
     return '[OK] Todas as tabelas foram removidas.'
 
 
-# ------------------------------------------------------------
-# Menu CLI
-# ------------------------------------------------------------
 MENU = '''
 ============== MENU ==============
 1) Criar tabelas
@@ -641,7 +629,6 @@ MENU = '''
 7) Rodar consulta SQL customizada
 0) Sair
 > '''
-
 
 def menu():
     while True:

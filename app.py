@@ -5,11 +5,10 @@ from PIL import Image, ImageTk
 import os
 import pandas as pd
 import time
+from tkinterweb import HtmlFrame
+import markdown2
 import main as m
 
-# ============================================================
-# JANELA PRINCIPAL
-# ============================================================
 janela = tk.Tk()
 janela.title('ANALISADOR DE ARQUIVOS')
 janela.geometry('1200x700')
@@ -17,9 +16,7 @@ janela.configure(bg='#f5f6f7')
 janela.state('zoomed')
 janela.resizable(True, True)
 
-# ============================================================
-# ESTILOS
-# ============================================================
+
 style = ttk.Style()
 style.theme_use('clam')
 
@@ -33,18 +30,12 @@ style.configure(
 style.map('Custom.TButton', background=[('active', '#c2e1ff')])
 style.configure('Custom.TLabel', font=('Segoe UI', 18, 'bold'), background='#f5f6f7')
 
-# ============================================================
-# LAYOUT
-# ============================================================
 frame_chat = tk.Frame(janela, bg='white', bd=1, relief='solid')
 frame_chat.pack(side='left', fill='both', expand=True, padx=(20, 10), pady=20)
 
 frame_menu = tk.Frame(janela, bg='#f5f6f7')
 frame_menu.pack(side='right', fill='y', padx=(0, 20), pady=20)
 
-# ============================================================
-# LOGO
-# ============================================================
 try:
     image_path = './img/logo.png'
     img = Image.open(image_path).resize((190, 160))
@@ -55,9 +46,6 @@ try:
 except Exception:
     ttk.Label(frame_menu, text='ANALISADOR DE ARQUIVOS', style='Custom.TLabel').pack(pady=(10, 15))
 
-# ============================================================
-# ÁREA DE MENSAGENS
-# ============================================================
 frame_canvas = tk.Frame(frame_chat)
 frame_canvas.pack(fill='both', expand=True, padx=10, pady=10)
 
@@ -76,29 +64,147 @@ def atualizar_scroll(event=None):
     canvas.configure(scrollregion=canvas.bbox('all'))
 frame_mensagens.bind('<Configure>', atualizar_scroll)
 
-def exibir_mensagem(remetente, texto, cor=None):
-    cor = cor or ('#e0ffe0' if remetente == 'Você' else '#d7ebf9')
-    largura_msg = max(frame_chat.winfo_width() - 120, 600)
-    msg = tk.Message(
-        frame_mensagens,
-        text=f'{remetente}: {texto}',
-        bg=cor,
-        width=largura_msg,
-        justify='left',
-        anchor='w',
-        padx=10,
-        pady=5,
-        font=('Segoe UI', 10)
+def _rounded_rect(canvas_obj, x1, y1, x2, y2, r=12, **kwargs):
+    pontos = [
+        x1+r, y1,
+        x2-r, y1,
+        x2, y1,
+        x2, y1+r,
+        x2, y2-r,
+        x2, y2,
+        x2-r, y2,
+        x1+r, y2,
+        x1, y2,
+        x1, y2-r,
+        x1, y1+r,
+        x1, y1
+    ]
+    return canvas_obj.create_polygon(pontos, smooth=True, **kwargs)
+
+def md_to_html(md_text: str) -> str:
+    html_body = markdown2.markdown(
+        md_text,
+        extras=[
+            "fenced-code-blocks",
+            "tables",
+            "strike",
+            "break-on-newline",
+            "code-friendly",
+            "smarty-pants"
+        ]
     )
-    msg.pack(fill='x', padx=10, pady=5, anchor='w')
-    frame_mensagens.update_idletasks()
-    canvas.yview_moveto(1.0)
+    style = """
+    <style>
+      body { font-family: 'Segoe UI', sans-serif; color: #222; }
+      p { margin: 0.5em 0; }
+      pre, code { font-family: Consolas, Menlo, monospace; }
+      pre { background:#f5f5f5; padding:10px; border-radius:8px; overflow:auto; }
+      table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+      th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
+      h1, h2, h3, h4 { margin: 0.4em 0 0.2em; }
+      a { text-decoration: none; }
+    </style>
+    """
+    return f"<!doctype html><html><head>{style}</head><body>{html_body}</body></html>"
+
+def exibir_mensagem(remetente, texto, cor=None):
+    largura_msg = max(frame_chat.winfo_width() - 140, 520)
+
+    wrap = tk.Frame(frame_mensagens, bg='white')
+    wrap.pack(fill='x', padx=10, pady=6)
+
+    if remetente == 'Você':
+        anchor_side = 'e'
+        cor_bg = cor or '#dfffe3'
+        cor_borda = '#b6f1bd'
+        margem = (120, 0)
+    elif remetente == 'IA':
+        anchor_side = 'w'
+        cor_bg = cor or '#d7ebf9'
+        cor_borda = '#bcdcf4'
+        margem = (0, 120)
+    else:
+        anchor_side = 'w'
+        cor_bg = cor or '#eeeeee'
+        cor_borda = '#dddddd'
+        margem = (0, 180)
+
+    cabecalho = tk.Label(
+        wrap,
+        text=f'{remetente}:',
+        bg='white',
+        fg='#666',
+        font=('Segoe UI', 9, 'bold'),
+        anchor='e' if anchor_side == 'e' else 'w',
+        justify='right' if anchor_side == 'e' else 'left'
+    )
+    cabecalho.pack(fill='x', padx=2)
+
+    c = tk.Canvas(wrap, bg='white', highlightthickness=0, borderwidth=0, height=10)
+    if anchor_side == 'e':
+        spacer = tk.Frame(wrap, bg='white')
+        spacer.pack(side='left', expand=True, fill='x')
+        c.pack(side='right', padx=margem, fill='x')
+    else:
+        c.pack(side='left', padx=margem, fill='x')
+
+    inner = tk.Frame(c, bg=cor_bg)
+    pad_int = 10
+    max_width = largura_msg
+
+    if remetente == 'IA':
+        html = md_to_html(texto)  
+        content = HtmlFrame(inner, horizontal_scrollbar="auto")
+        content.load_html(html)
+        content.pack(fill='both', expand=True, padx=pad_int, pady=pad_int)
+    else:
+        content = tk.Message(
+            inner,
+            text=texto,
+            bg=cor_bg,
+            width=max_width,
+            justify='left',
+            anchor='w',
+            padx=pad_int,
+            pady=pad_int,
+            font=('Segoe UI', 10)
+        )
+        content.pack(fill='both', expand=True)
+
+    window_id = c.create_window(0, 0, window=inner, anchor='nw')
+
+    def ajustar():
+        c.update_idletasks()
+        inner.update_idletasks()
+
+        w = min(inner.winfo_reqwidth(), max_width)
+        inner.config(width=w)
+        c.config(width=w)
+
+        if remetente == 'IA' and hasattr(content, 'fit_height'):
+            content.fit_height()
+
+        c.update_idletasks()
+        inner.update_idletasks()
+
+        h = max(inner.winfo_reqheight(), content.winfo_reqheight() + 2*pad_int if remetente == 'IA' else inner.winfo_reqheight())
+        c.config(height=h)
+
+        c.coords(window_id, 0, 0)
+        c.delete('bubble')
+        _rounded_rect(c, 1, 1, w-1, h-1, r=14, fill=cor_bg, outline=cor_borda, width=1.5, tags='bubble')
+        c.tag_lower('bubble')
+
+        frame_mensagens.update_idletasks()
+        canvas.configure(scrollregion=canvas.bbox('all'))
+        canvas.yview_moveto(1.0)
+
+
+    ajustar()
+    wrap.after(50, ajustar)
 
 exibir_mensagem('Sistema', '[OK] Interface inicializada com sucesso!')
 
-# ============================================================
-# FUNÇÕES
-# ============================================================
 def criar_tabelas():
     try:
         msg = m.create_all()
@@ -127,9 +233,8 @@ def remover_tabelas():
     except Exception as e:
         exibir_mensagem('Erro', str(e))
         messagebox.showerror('Erro', str(e))
-    
 
-def upload_arquivo():    # Função para mandar um mensagem de ERRO caso o banco não exista
+def upload_arquivo():
     if not m.verificar_banco():
         msg = 'Não é possível fazer upload de arquivos, porque o banco ainda não existe. Clique no botão "Criar tabelas" para criar o banco.'
         exibir_mensagem('Erro', msg)
@@ -142,7 +247,7 @@ def upload_arquivo():    # Função para mandar um mensagem de ERRO caso o banco
             ('Todos os suportados', '*.pdf; *.docx; *.xlsx; *.xls; *.csv; *.txt; *.md'),
             ('PDF', '*.pdf'),
             ('Word', '*.docx'),
-            ('Excel', '*.xlsx;*.xls'),
+            ('Excel', '*.xlsx; *.xls'),
             ('CSV', '*.csv'),
             ('TXT', '*.txt'),
             ('Markdown', '*.md'),
@@ -163,7 +268,6 @@ def upload_arquivo():    # Função para mandar um mensagem de ERRO caso o banco
             exibir_mensagem('Sistema', f'Upload concluído com sucesso. ID={arq_id}')
             time.sleep(0.5)
 
-                # Exibir apenas o último log do arquivo
         df_logs = pd.read_sql_query(
             f'''
             SELECT acao, detalhe, data 
@@ -179,7 +283,7 @@ def upload_arquivo():    # Função para mandar um mensagem de ERRO caso o banco
             log = df_logs.iloc[0]
             cor = '#ffe6e6' if 'erro' in log['acao'].lower() else '#e6ffe6'
             if 'duplicado' in log['acao'].lower():
-                cor = '#fff8dc'  # amarelo claro para duplicado
+                cor = '#fff8dc'
             hora = pd.to_datetime(log['data']).strftime('%d-%m-%y-%H:%M:%S')
             exibir_mensagem('Log', f"[{hora}] {log['acao']} → {log['detalhe']}", cor)
 
@@ -195,26 +299,22 @@ def perguntar_arquivo():
         exibir_mensagem('Erro', msg)
         messagebox.showerror('Erro', msg)
         return
-    
-    
+
     global id_arquivo_escolhido
-    janela_id = tk.Toplevel(janela)
-    janela_id.title('Selecionar arquivo para perguntas')
-    janela_id.geometry('420x160')
-    janela_id.transient(janela)
-    janela_id.grab_set()
 
     try:
         df = pd.read_sql_query("SELECT id, nome FROM arquivo ORDER BY id DESC", con=m.engine)
     except Exception as e:
         exibir_mensagem('Erro', f'Erro ao listar arquivos: {e}')
-        messagebox.showerror('Erro', str(e))
-        return
-
+        return messagebox.showerror('Erro', str(e))
     if df.empty:
-        messagebox.showerror('ERRO', 'Nenhum arquivo encontrado. Faça upload primeiro.')
-        janela_id.destroy()
-        return
+        return messagebox.showerror('ERRO', 'Nenhum arquivo encontrado. Faça upload primeiro.')
+
+    janela_id = tk.Toplevel(janela)
+    janela_id.title('Selecionar arquivo para perguntas')
+    janela_id.geometry('420x160')
+    janela_id.transient(janela)
+    janela_id.grab_set()
 
     ttk.Label(janela_id, text='Escolha o arquivo:').pack(pady=10)
     combo = ttk.Combobox(janela_id, width=50, values=df['nome'].tolist(), state='readonly')
@@ -274,7 +374,6 @@ def graficos_prontos():
 
     exibir_mensagem('Sistema', 'Executando consultas e gráficos prontos...')
     try:
-        # Usa diretamente as funções do main.py
         sqls = [
             (
                 "Quantidade de arquivos x tipo",
@@ -329,28 +428,22 @@ def consulta_sql():
     if not m.verificar_banco():
         msg = 'Não é possível executar consultas, porque as tabelas do banco estão vazias. Faça upload de novos arquivos para fazer fazer perguntas.'
         exibir_mensagem('Erro', msg)
-        messagebox.showerror('Erro', msg)
-        return
-    
-    janela_sql = tk.Toplevel(janela)
-    janela_sql.title('Consulta SQL customizada')
-    janela_sql.geometry('600x450')
-    janela_sql.transient(janela)
-    janela_sql.grab_set()
-
+        return messagebox.showerror('Erro', msg)
     try:
         df = pd.read_sql_query('''SELECT a.id as id,
                                 a.nome as nome
                                 FROM arquivo a
                                 ORDER BY nome''', con=m.engine)
         if df.empty:
-            messagebox.showerror('ERRO', 'Nenhum arquivo disponível para consulta.')
-            janela_sql.destroy()
-            return
+            return messagebox.showerror('ERRO', 'Nenhum arquivo disponível para consulta.')
     except Exception as e:
-        messagebox.showerror('Erro', f'Falha ao buscar arquivos: {e}')
-        janela_sql.destroy()
-        return
+        return messagebox.showerror('Erro', f'Falha ao buscar arquivos: {e}')
+        
+    janela_sql = tk.Toplevel(janela)
+    janela_sql.title('Consulta SQL customizada')
+    janela_sql.geometry('600x450')
+    janela_sql.transient(janela)
+    janela_sql.grab_set()
     
     ttk.Label(janela_sql, text='Digite uma consulta SELECT:').pack(pady=10)
     entry_sql = tk.Text(janela_sql, height=15, width=80, font=('Consolas', 10))
@@ -383,25 +476,19 @@ def remover_arquivo():
         exibir_mensagem('Erro', msg)
         messagebox.showerror('Erro', msg)
         return
-
-    """Abre uma janela para remover um arquivo existente pelo ID."""
-    janela_remover = tk.Toplevel(janela)
-    janela_remover.title('Remover arquivo')
-    janela_remover.geometry('380x200')
-
     try:
         df = pd.read_sql_query('''SELECT a.id as id,
                                 a.nome as nome
                                 FROM arquivo a
                                 ORDER BY nome''', con=m.engine)
         if df.empty:
-            messagebox.showerror('ERRO', 'Nenhum arquivo disponível para remoção.')
-            janela_remover.destroy()
-            return
+            return messagebox.showerror('ERRO', 'Nenhum arquivo disponível para remoção.')
     except Exception as e:
-        messagebox.showerror('Erro', f'Falha ao buscar arquivos: {e}')
-        janela_remover.destroy()
-        return
+        return messagebox.showerror('Erro', f'Falha ao buscar arquivos: {e}')
+    
+    janela_remover = tk.Toplevel(janela)
+    janela_remover.title('Remover arquivo')
+    janela_remover.geometry('380x200')
 
     ttk.Label(janela_remover, text='Selecione o arquivo para remover:').pack(pady=10)
     combo = ttk.Combobox(janela_remover, width=60, values=df['nome'].to_list())
@@ -417,15 +504,16 @@ def remover_arquivo():
         if conf:
             janela_remover.bell()
             aviso = messagebox.askyesno('Confirmação', 'Essa ação é irreversível! Deseja continuar?')
-            if aviso:
-                with m.SessionLocal() as sess:
-                    resultado = m.remove_file(sess, arq_id)
-                exibir_mensagem('Sistema', resultado)
-                if '[OK]' in resultado:
-                    messagebox.showinfo('Sucesso', resultado)
-                else:
-                    messagebox.showerror('Erro', resultado)
-                janela_remover.destroy()
+            if not aviso:
+                return messagebox.showerror('ERRO', 'Ação cancelada pelo usuário.')
+            with m.SessionLocal() as sess:
+                resultado = m.remove_file(sess, arq_id)
+            exibir_mensagem('Sistema', resultado)
+            if '[OK]' in resultado:
+                messagebox.showinfo('Sucesso', resultado)
+            else:
+                messagebox.showerror('Erro', resultado)
+            janela_remover.destroy()
         return
 
     ttk.Button(janela_remover, text='Remover', style='Custom.TButton', command=confirmar_remocao).pack(pady=15)
@@ -453,8 +541,7 @@ def listar_arquivos():
         lista_arquivos_nomes = df_arquivos['nome'].tolist()
         arquivos = '\n'.join(f'ID: {id} | Nome: {nome}' for id, nome in zip(lista_arquivos_ids, lista_arquivos_nomes))
         if df_arquivos.empty:
-            messagebox.showerror('ERRO', 'Nenhum arquivo encontrado. Faça upload primeiro.')
-            return
+            return messagebox.showerror('ERRO', 'Nenhum arquivo encontrado. Faça upload primeiro.')
     except Exception as e:
         exibir_mensagem('Erro', str(e))
         messagebox.showerror('Erro', str(e))
@@ -467,9 +554,6 @@ def sair():
     if sair:
         janela.destroy()
 
-# ============================================================
-# BOTÕES DO MENU
-# ============================================================
 botoes = {
     'Criar tabelas': criar_tabelas,
     'Remover tabelas': remover_tabelas,
@@ -485,9 +569,6 @@ botoes = {
 for nome, funcao in botoes.items():
     ttk.Button(frame_menu, text=nome, style='Custom.TButton', width=30, command=funcao).pack(pady=5, padx=10)
 
-# ============================================================
-# CAMPO DE ENTRADA INFERIOR
-# ============================================================
 frame_entry = tk.Frame(frame_chat, bg='white')
 frame_entry.pack(fill='x', padx=10, pady=10)
 

@@ -1,705 +1,571 @@
-from __future__ import annotations
+# -*- coding: utf-8 -*-
+import tkinter as tk
+from tkinter import ttk, filedialog, messagebox
+from PIL import Image, ImageTk
 import os
-import io
-import json
-import time
-import hashlib
-import datetime as dt
-from dataclasses import dataclass
-from typing import Optional, List, Tuple
-
-from dotenv import load_dotenv
-import shutil
-
-# Banco de dados
-from sqlalchemy import (
-    create_engine, Column, Integer, String, Text, LargeBinary, DateTime, ForeignKey,
-    Float, JSON, func
-)
-from sqlalchemy.orm import declarative_base, sessionmaker, relationship
-
-# Extração de conteúdo
 import pandas as pd
-
-try:
-    import fitz  # PyMuPDF
-except Exception:
-    fitz = None
-
-try:
-    import docx  # python-docx
-except Exception:
-    docx = None
-
-# IA / Embeddings / RAG
-from langchain.text_splitter import RecursiveCharacterTextSplitter
-from langchain_community.vectorstores import FAISS
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain.prompts import ChatPromptTemplate
-from langchain_groq import ChatGroq
-import warnings
-warnings.filterwarnings("ignore", category=UserWarning, module="langchain")
+import time
+#from tkhtmlview import HTMLLabel
+from tkinterweb import HtmlFrame
 import markdown2
-import re
-# Visualização
-import matplotlib.pyplot as plt
-
-# ------------------------------------------------------------
-# Configuração
-# ------------------------------------------------------------
-load_dotenv()
-DATABASE_URL = os.getenv('DATABASE_URL')
-GROQ_API_KEY = os.getenv('GROQ_API_KEY')
-GROQ_API_MODEL = os.getenv('GROQ_API_MODEL')
-
-if not DATABASE_URL:
-    raise RuntimeError('Defina DATABASE_URL no .env (ex: postgresql+psycopg2://user:pass@host:5432/db)')
-if not GROQ_API_KEY:
-    print('[AVISO] GROQ_API_KEY não definido. Funções de LLM ficarão limitadas até você configurar.')
-
-engine = create_engine(os.getenv("DATABASE_URL"))
-#with engine.connect() as conn:
-    #print("[OK] Conectado ao banco com sucesso!")
-SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
-Base = declarative_base()
-
-# ------------------------------------------------------------
-# Modelos (10 entidades)
-# ------------------------------------------------------------
-class TipoArquivo(Base):
-    __tablename__ = 'tipo_arquivo'
-    id = Column(Integer, primary_key=True)
-    nome = Column(String(50), nullable=False, unique=True)
-    arquivos = relationship('Arquivo', back_populates='tipo')
-
-
-class Arquivo(Base):
-    __tablename__ = 'arquivo'
-    id = Column(Integer, primary_key=True)
-    nome = Column(String(255))
-    tipo_id = Column(Integer, ForeignKey('tipo_arquivo.id'))
-    data_upload = Column(DateTime, default=func.now())
-    conteudo = Column(LargeBinary)
-    tamanho = Column(Integer)
-    hash_sha256 = Column(String(64), index=True)
-
-    tipo = relationship('TipoArquivo', back_populates='arquivos')
-    conteudo_extraido = relationship('ConteudoExtraido', back_populates='arquivo', uselist=False)
-    perguntas = relationship('Pergunta', back_populates='arquivo')
-    logs = relationship('LogSistema', back_populates='arquivo')
-    resumo = relationship('Resumo', back_populates='arquivo', uselist=False)
-
-
-class ConteudoExtraido(Base):
-    __tablename__ = 'conteudo_extraido'
-    id = Column(Integer, primary_key=True)
-    arquivo_id = Column(Integer, ForeignKey('arquivo.id'), unique=True)
-    texto = Column(Text)
-
-    arquivo = relationship('Arquivo', back_populates='conteudo_extraido')
-    embeddings = relationship('Embedding', back_populates='conteudo')
-
-
-class Embedding(Base):
-    __tablename__ = 'embedding'
-    id = Column(Integer, primary_key=True)
-    conteudo_id = Column(Integer, ForeignKey('conteudo_extraido.id'))
-    num_chunks = Column(Integer)
-    dim = Column(Integer)
-    index_path = Column(String(255))
-
-    conteudo = relationship('ConteudoExtraido', back_populates='embeddings')
-
-
-class Pergunta(Base):
-    __tablename__ = 'pergunta'
-    id = Column(Integer, primary_key=True)
-    arquivo_id = Column(Integer, ForeignKey('arquivo.id'))
-    texto = Column(Text)
-    data = Column(DateTime, default=func.now())
-
-    arquivo = relationship('Arquivo', back_populates='perguntas')
-    resposta = relationship('RespostaIA', back_populates='pergunta', uselist=False)
-
-
-class RespostaIA(Base):
-    __tablename__ = 'resposta_ia'
-    id = Column(Integer, primary_key=True)
-    pergunta_id = Column(Integer, ForeignKey('pergunta.id'))
-    resposta = Column(Text)
-    tempo_execucao = Column(Float)
-    tokens_input = Column(Integer, nullable=True)
-    tokens_output = Column(Integer, nullable=True)
-
-    pergunta = relationship('Pergunta', back_populates='resposta')
-
-class ConsultaSQL(Base):
-    __tablename__ = 'consulta_sql'
-    id = Column(Integer, primary_key=True)
-    sql = Column(Text, nullable=False)
-    descricao = Column(Text)
-    data = Column(DateTime, default=func.now())
-
-    resultado = relationship('ResultadoConsulta', back_populates='consulta', uselist=False)
-
-
-class ResultadoConsulta(Base):
-    __tablename__ = 'resultado_consulta'
-    id = Column(Integer, primary_key=True)
-    consulta_id = Column(Integer, ForeignKey('consulta_sql.id'), unique=True)
-    caminho_arquivo = Column(String(255))
-    dados_json = Column(JSON)
-    linhas = Column(Integer)
-    colunas = Column(Integer)
-    data_execucao = Column(DateTime, default=func.now())
-
-    consulta = relationship('ConsultaSQL', back_populates='resultado')
-
-
-class LogSistema(Base):
-    __tablename__ = 'log_sistema'
-    id = Column(Integer, primary_key=True)
-    arquivo_id = Column(Integer, ForeignKey('arquivo.id'), nullable=True)
-    acao = Column(String(100))
-    detalhe = Column(Text)
-    data = Column(DateTime, default=func.now())
-
-
-    arquivo = relationship('Arquivo', back_populates='logs')
-
-
-class Resumo(Base):
-    __tablename__ = 'resumo'
-    id = Column(Integer, primary_key=True)
-    arquivo_id = Column(Integer, ForeignKey('arquivo.id'), unique=True)
-    texto = Column(Text)
-    data = Column(DateTime, default=func.now())
-
-
-    arquivo = relationship('Arquivo', back_populates='resumo')
-
-
-# ------------------------------------------------------------
-# Utilitários
-# ------------------------------------------------------------
-CHUNK_SIZE = 1200
-CHUNK_OVERLAP = 150
-EMBEDDING_MODEL = 'sentence-transformers/all-MiniLM-L6-v2'  # rápido e bom
-INDEX_DIR = 'indices_faiss'
-CHART_DIR = 'charts'
-RESULT_CONSULTA_DIR = 'consultas'
-os.makedirs(INDEX_DIR, exist_ok=True)
-os.makedirs(CHART_DIR, exist_ok=True)
-os.makedirs(RESULT_CONSULTA_DIR, exist_ok=True)
-
-
-def sha256_bytes(b: bytes) -> str:
-    return hashlib.sha256(b).hexdigest()
-
-
-def infer_tipo_from_name(name: str) -> str:
-    n = name.lower()
-    return next(
-        (
-            ext[1:]
-            for ext in (
-                '.pdf',
-                '.docx',
-                '.xlsx',
-                '.xls',
-                '.csv',
-                '.txt',
-                '.md',
-            )
-            if n.endswith(ext)
-        ),
-        'desconhecido',
-    )
-
-
-def ensure_tipo(sess, nome_tipo: str) -> TipoArquivo:
-    obj = sess.query(TipoArquivo).filter_by(nome=nome_tipo).one_or_none()
-    if not obj:
-        obj = TipoArquivo(nome=nome_tipo)
-        sess.add(obj)
-        sess.commit()
-    return obj
-
-# ------------------------------------------------------------
-# Extração de conteúdo
-# ------------------------------------------------------------
-
-def extract_text_from_pdf(data: bytes) -> str:
-    if not fitz:
-        raise RuntimeError('PyMuPDF não instalado. pip install pymupdf')
-    text = []
-    with fitz.open(stream=data, filetype='pdf') as doc:
-        text.extend(page.get_text() for page in doc)
-    return '\n'.join(text).strip()
-
-
-def extract_text_from_docx(data: bytes) -> str:
-    if not docx:
-        raise RuntimeError('python-docx não instalado. pip install python-docx')
-    bio = io.BytesIO(data)
-    d = docx.Document(bio)
-    return '\n'.join(p.text for p in d.paragraphs).strip()
-    
-
-def extract_text_from_csv(data: bytes) -> str:
-    bio = io.BytesIO(data)
-    df = pd.read_csv(bio)
-    # Representamos CSV como texto tabular simples para RAG
-    return df.to_csv(index=False)
-
-
-def extract_text_from_excel(data: bytes) -> str:
-    bio = io.BytesIO(data)
-    dfs = pd.read_excel(bio, sheet_name=None)  # todas as abas
-    parts = []
-    parts.extend(
-        f"# Sheet: {sheet}\n" + df.to_markdown(index=False)
-        for sheet, df in dfs.items()
-    )
-    return '\n\n'.join(parts)
-
-
-def extract_text_from_txt(data: bytes) -> str:
-    return data.decode('utf-8', errors='ignore')
-
-
-
-def extract_text_from_md(data: bytes) -> str:
-    try:
-        html = markdown2.markdown(data.decode('utf-8', errors='ignore'))
-        text = re.sub(r'<[^>]+>', '', html)  # remove tags HTML
-        text = re.sub(r'\s+', ' ', text)
-        return text.strip()
-    except ImportError:
-        # Caso markdown2 não esteja instalado, apenas limpa o texto bruto
-        text = data.decode('utf-8', errors='ignore')
-
-        # Remove metadados YAML (se existirem no topo)
-        if text.startswith('---'):
-            end = text.find('\n---', 3)
-            if end != -1:
-                text = text[end + 4:]
-
-        # Remove linhas vazias e espaços desnecessários
-        lines = [line.strip() for line in text.splitlines()]
-        text = "\n".join(line for line in lines if line)
-
-        return text.strip()
-
-
-def extract_content_by_type(tipo: str, data: bytes) -> str:
-    if tipo == 'pdf':
-        return extract_text_from_pdf(data)
-    if tipo == 'docx':
-        return extract_text_from_docx(data)
-    if tipo == 'csv':
-        return extract_text_from_csv(data)
-    if tipo in {'xlsx', 'xls'}:
-        return extract_text_from_excel(data)
-    if tipo == 'txt':
-        return extract_text_from_txt(data)
-    if tipo == 'md':
-        return extract_text_from_md(data)
-    return ''
-
-# ------------------------------------------------------------
-# Embeddings / Índice por arquivo
-# ------------------------------------------------------------
-
-def build_or_load_index_for_file(sess, conteudo: ConteudoExtraido) -> Tuple[FAISS, str]:
-    # Gera chunks e constrói um índice FAISS por arquivo
-    texto = conteudo.texto or ''
-    splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
-    docs = splitter.create_documents([texto])
-
-    emb = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
-
-    index_path = os.path.join(INDEX_DIR, f'faiss_{conteudo.arquivo_id}.index')
-
-    if os.path.exists(index_path):
-        vs = FAISS.load_local(index_path, emb, allow_dangerous_deserialization=True)
-    else:
-        vs = FAISS.from_documents(docs, emb)
-        vs.save_local(index_path)
-
-    # Persistimos metadados de Embedding
-    meta = sess.query(Embedding).filter_by(conteudo_id=conteudo.id).one_or_none()
-    if not meta:
-        meta = Embedding(
-            conteudo_id=conteudo.id,
-            num_chunks=len(docs),
-            dim=384,  # dimensão do all-MiniLM-L6-v2
-            index_path=index_path,
-        )
-        sess.add(meta)
-        sess.commit()
-    return vs, index_path
-
-# ------------------------------------------------------------
-# Perguntas e respostas (Groq + RAG)
-# ------------------------------------------------------------
-SYSTEM_PROMPT = (
-    '''Você é um assistente que responde com base no arquivo fornecido, de forma amigável. Você pode dar sua opnião APENAS quando perguntado.
-    Seja consiso nas respostas e traga pontes importantes, quando possível.
-    Se não souber a resposta, diga claramente que não sabe.
-    Se mostre prestativo, perguntando se o usuário quer mais informações, após cada resposta sua.
-    O formato de resposta deve sem em markdown, porém não use * nem # nas
-    respostas. NÃO invente informações que não sabe.
-    '''
+import main as m
+
+janela = tk.Tk()
+janela.title('ANALISADOR DE ARQUIVOS')
+janela.geometry('1200x700')
+janela.configure(bg='#f5f6f7')
+janela.state('zoomed')
+janela.resizable(True, True)
+
+style = ttk.Style()
+style.theme_use('clam')
+
+style.configure(
+    'Custom.TButton',
+    font=('Segoe UI', 11, 'bold'),
+    padding=6,
+    background='#e0f0ff',
+    foreground='#222',
 )
+style.map('Custom.TButton', background=[('active', '#c2e1ff')])
+style.configure('Custom.TLabel', font=('Segoe UI', 18, 'bold'), background='#f5f6f7')
 
-def answer_question(sess, arquivo_id: int, pergunta_texto: str) -> str:
-    arq = sess.get(Arquivo, arquivo_id)
-    if not arq or not arq.conteudo_extraido:
-        raise ValueError('Arquivo ou conteúdo não encontrado para este ID.')
+frame_chat = tk.Frame(janela, bg='white', bd=1, relief='solid')
+frame_chat.pack(side='left', fill='both', expand=True, padx=(20, 10), pady=20)
 
-    # Registrar pergunta
-    q = Pergunta(arquivo_id=arquivo_id, texto=pergunta_texto)
-    sess.add(q)
-    sess.commit()
+frame_menu = tk.Frame(janela, bg='#f5f6f7')
+frame_menu.pack(side='right', fill='y', padx=(0, 20), pady=20)
 
-    start = time.time()
-
-    # Recuperar o índice FAISS correto
-    embedding_meta = sess.query(Embedding).join(ConteudoExtraido).filter(
-        ConteudoExtraido.arquivo_id == arquivo_id
-    ).one_or_none()
-
-    if not embedding_meta or not os.path.exists(embedding_meta.index_path):
-        vs, _ = build_or_load_index_for_file(sess, arq.conteudo_extraido)
-    else:
-        emb = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
-        vs = FAISS.load_local(embedding_meta.index_path, emb, allow_dangerous_deserialization=True)
-
-    # Recuperação semântica
-    retrieved_docs = vs.similarity_search(pergunta_texto, k=5)
-    context = '\n\n'.join(d.page_content for d in retrieved_docs)
-
-    # Caso não tenha chave de API
-    if not GROQ_API_KEY:
-        resposta_texto = '[GROQ_API_KEY ausente] Contexto recuperado:\n' + context[:1000]
-        elapsed = time.time() - start
-        r = RespostaIA(pergunta_id=q.id, resposta=resposta_texto, tempo_execucao=elapsed)
-        sess.add(r)
-        sess.commit()
-        return resposta_texto
-
-    # Geração de resposta pela IA
-    llm = ChatGroq(api_key=GROQ_API_KEY, model_name=GROQ_API_MODEL)
-    prompt = ChatPromptTemplate.from_messages([
-        ('system', SYSTEM_PROMPT),
-        ('human', 'Contexto:\n{context}\n\nPergunta: {question}')
-    ])
-    chain = prompt | llm
-
-    resp = chain.invoke({'context': context, 'question': pergunta_texto})
-    resposta_texto = resp.content if hasattr(resp, 'content') else str(resp)
-
-    elapsed = time.time() - start
-    r = RespostaIA(pergunta_id=q.id, resposta=resposta_texto, tempo_execucao=elapsed)
-    sess.add(r)
-    sess.commit()
-    return resposta_texto
+try:
+    image_path = './img/logo.png'
+    img = Image.open(image_path).resize((190, 160))
+    img_tk = ImageTk.PhotoImage(img)
+    lbl_logo = ttk.Label(frame_menu, image=img_tk, background='#f5f6f7')
+    lbl_logo.image = img_tk
+    lbl_logo.pack(pady=(10, 15))
+except Exception:
+    ttk.Label(frame_menu, text='ANALISADOR DE ARQUIVOS', style='Custom.TLabel').pack(pady=(10, 15))
 
 
-# ------------------------------------------------------------
-# Upload e processamento
-# ------------------------------------------------------------
+frame_canvas = tk.Frame(frame_chat)
+frame_canvas.pack(fill='both', expand=True, padx=10, pady=10)
 
-def upload_file(sess, filepath: str) -> int:
-    with open(filepath, 'rb') as f:
-        data = f.read()
-    nome = os.path.basename(filepath)
-    tipo_nome = infer_tipo_from_name(nome)
-    tipo = ensure_tipo(sess, tipo_nome)
-    h = sha256_bytes(data)
+canvas = tk.Canvas(frame_canvas, bg='white', highlightthickness=0)
+scrollbar = ttk.Scrollbar(frame_canvas, orient='vertical', command=canvas.yview)
+canvas.configure(yscrollcommand=scrollbar.set)
+scrollbar.pack(side='right', fill='y')
+canvas.pack(side='left', fill='both', expand=True)
 
-    # Evitar duplicatas por hash
-    existente = sess.query(Arquivo).filter_by(hash_sha256=h).one_or_none()
-    if existente:
-        sess.add(LogSistema(arquivo_id=existente.id, acao='upload_duplicado', detalhe=nome))
-        sess.commit()
-        print(f'[INFO] Arquivo já existe (ID={existente.id}). Pulando upload.')
-        return existente.id
+frame_mensagens = tk.Frame(canvas, bg='white')
+canvas.create_window((0, 0), window=frame_mensagens, anchor='nw')
 
-    # Criação do registro do arquivo
-    arq = Arquivo(
-        nome=nome,
-        tipo_id=tipo.id,
-        conteudo=data,
-        tamanho=len(data),
-        hash_sha256=h
+caminhos = ['charts', 'consultas', 'indices_faiss']
+
+def atualizar_scroll(event=None):
+    canvas.configure(scrollregion=canvas.bbox('all'))
+frame_mensagens.bind('<Configure>', atualizar_scroll)
+
+
+def _rounded_rect(canvas_obj, x1, y1, x2, y2, r=12, **kwargs):
+    pontos = [
+        x1+r, y1,
+        x2-r, y1,
+        x2, y1,
+        x2, y1+r,
+        x2, y2-r,
+        x2, y2,
+        x2-r, y2,
+        x1+r, y2,
+        x1, y2,
+        x1, y2-r,
+        x1, y1+r,
+        x1, y1
+    ]
+    return canvas_obj.create_polygon(pontos, smooth=True, **kwargs)
+
+def md_to_html(md_text: str) -> str:
+    html_body = markdown2.markdown(
+        md_text,
+        extras=[
+            "fenced-code-blocks",
+            "tables",
+            "strike",
+            "break-on-newline",
+            "code-friendly",
+            "smarty-pants"
+        ]
     )
-    sess.add(arq)
-    sess.commit()
-
-    # Extração do conteúdo
-    try:
-        texto = extract_content_by_type(tipo.nome, data)
-    except Exception as e:
-        texto = ''
-        sess.add(LogSistema(arquivo_id=arq.id, acao='erro_extracao', detalhe=str(e)))
-        sess.commit()
-        print(f'[ERRO] Extração falhou: {e}')
-
-    c = ConteudoExtraido(arquivo_id=arq.id, texto=texto)
-    sess.add(c)
-    sess.commit()
-
-    # Indexação
-    try:
-        build_or_load_index_for_file(sess, c)
-    except Exception as e:
-        sess.add(LogSistema(arquivo_id=arq.id, acao='erro_indexacao', detalhe=str(e)))
-        sess.commit()
-        print(f'[ERRO] Indexação falhou: {e}')
-
-    # Geração do resumo automático
-    resumo_texto = ''
-    try:
-        if texto.strip():
-            if GROQ_API_KEY:
-                llm = ChatGroq(api_key=GROQ_API_KEY, model_name=GROQ_API_MODEL)
-                prompt = ChatPromptTemplate.from_messages([
-                    ('system', 'Resuma o conteúdo a seguir de forma objetiva e em português claro.'),
-                    ('human', texto[:4000])  # limite de tokens para evitar truncamento
-                ])
-                chain = prompt | llm
-                resp = chain.invoke({})
-                resumo_texto = resp.content if hasattr(resp, 'content') else str(resp)
-            else:
-                resumo_texto = texto[:500] + '...' if len(texto) > 500 else texto
-        else:
-            resumo_texto = '[Sem conteúdo extraído para resumir]'
-    except Exception as e:
-        resumo_texto = f'[Erro ao gerar resumo: {e}]'
-        sess.add(LogSistema(arquivo_id=arq.id, acao='erro_resumo', detalhe=str(e)))
-        sess.commit()
-        print(f'[ERRO] Resumo falhou: {e}')
-
-    # Salvar resumo na tabela
-    r = Resumo(arquivo_id=arq.id, texto=resumo_texto)
-    sess.add(r)
-    sess.add(LogSistema(arquivo_id=arq.id, acao='resumo_gerado', detalhe=f'{len(resumo_texto)} caracteres'))
-    sess.add(LogSistema(arquivo_id=arq.id, acao='upload_ok', detalhe=nome))
-    sess.commit()
-
-    print(f'[OK] Upload, processamento e resumo concluídos. ID={arq.id}')
-    return arq.id
-
-
-# ------------------------------------------------------------
-# Consultas + gráficos
-# ------------------------------------------------------------
-
-def run_and_plot(titulo, eixo_x, eixo_y, sql: str, descricao: str, chart_type: str = 'barras') -> None:
-    # Verificação de segurança
-    if not sql.strip().lower().startswith('select'):
-        raise ValueError('Apenas consultas SELECT são permitidas nesta função.')
-
-    # Executa a consulta diretamente
-    df = pd.read_sql(sql, con=engine)
-
-    # Cria o diretório se necessário
-    os.makedirs(CHART_DIR, exist_ok=True)
-
-    # Caminho do gráfico
-    timestamp = int(time.time())
-    img_path = os.path.join(CHART_DIR, f'grafico_temp_{timestamp}.png')
-
-    # Geração do gráfico
-    plt.figure(figsize=(5,5))
-    if df.shape[1] >= 2:
-        x = df.iloc[:, 0].astype(str)
-        y = pd.to_numeric(df.iloc[:, 1], errors='coerce').fillna(0)
-        if chart_type == 'linhas':
-            plt.plot(x, y)
-        elif chart_type == 'pizza':
-            plt.pie(y, labels=x, autopct='%1.1f%%')
-        else:
-            plt.bar(x, y)
-        plt.xticks(rotation=45, ha='right')
-        plt.tight_layout()
-    else:
-        for col in df.columns:
-            s = pd.to_numeric(df[col], errors='coerce').dropna()
-            if not s.empty:
-                plt.hist(s)
-                break
-        plt.tight_layout()
     
-    plt.title(titulo, fontsize=12, fontweight='bold', color='black')
-    plt.xlabel(eixo_x)
-    plt.ylabel(eixo_y)
-    plt.subplots_adjust(left=0.15, right=0.95, bottom=0.15, top=0.85)
-    plt.savefig(img_path)
-    plt.show()
-    plt.close()
+    return f"<!doctype html><html><body>{html_body}</body></html>"
+def exibir_mensagem(remetente, texto, cor=None):
+    largura_msg = max(frame_chat.winfo_width() - 140, 520)
 
-    print(f'[OK] Consulta executada. Gráfico salvo em {img_path}')
+    wrap = tk.Frame(frame_mensagens, bg='white')
+    wrap.pack(fill='x', padx=10, pady=6)
 
+    if remetente == 'Você':
+        anchor_side = 'e'
+        cor_bg = cor or '#dfffe3'
+        cor_borda = '#b6f1bd'
+        margem = (120, 0)
+    elif remetente == 'IA':
+        anchor_side = 'w'
+        cor_bg = cor or '#d7ebf9'
+        cor_borda = '#bcdcf4'
+        margem = (0, 120)
+    else:
+        anchor_side = 'w'
+        cor_bg = cor or '#eeeeee'
+        cor_borda = '#dddddd'
+        margem = (0, 180)
 
-# ------------------------------------------------------------
-# Setup do banco
-# ------------------------------------------------------------
+    cabecalho = tk.Label(
+        wrap,
+        text=f'{remetente}:',
+        bg='white',
+        fg='#666',
+        font=('Segoe UI', 12, 'bold'),
+        anchor='e' if anchor_side == 'e' else 'w',
+        justify='right' if anchor_side == 'e' else 'left'
+    )
+    cabecalho.pack(fill='x', padx=2)
 
-def create_all():
-    #print("[INFO] Criando tabelas no banco de dados...")
-    Base.metadata.create_all(engine)
-    with SessionLocal() as sess:
-        for nome in ['pdf', 'docx', 'xlsx', 'xls', 'csv', 'txt', 'md']:
-            ensure_tipo(sess, nome)
-    return '[OK] Tabelas criadas e tipos iniciais inseridos.'
+    c = tk.Canvas(wrap, bg='white', highlightthickness=0, borderwidth=0, height=10)
+    if anchor_side == 'e':
+        spacer = tk.Frame(wrap, bg='white')
+        spacer.pack(side='left', expand=True, fill='x')
+        c.pack(side='right', padx=margem, fill='x')
+    else:
+        c.pack(side='left', padx=margem, fill='x')
 
+    inner = tk.Frame(c, bg=cor_bg)
+    pad_int = 10
+    max_width = largura_msg
 
-def drop_all():
-    Base.metadata.drop_all(engine)
-    if os.path.exists(INDEX_DIR):
-        shutil.rmtree(INDEX_DIR)
-    if os.path.exists(CHART_DIR):
-        shutil.rmtree(CHART_DIR)
-    if os.path.exists(RESULT_CONSULTA_DIR):
-        shutil.rmtree(RESULT_CONSULTA_DIR)
-    return '[OK] Todas as tabelas foram removidas.'
+    if remetente == 'IA':
+        html = md_to_html(texto)
+        content = HTMLLabel(inner, html=html, background=cor_bg)
+        content.pack(fill='both', expand=True, padx=pad_int, pady=pad_int)
+    else:
+        content = tk.Message(
+            inner,
+            text=texto,
+            bg=cor_bg,
+            width=max_width,
+            justify='left',
+            anchor='w',
+            padx=pad_int,
+            pady=pad_int,
+            font=('Segoe UI', 10)
+        )
+        content.pack(fill='both', expand=True)
 
+    window_id = c.create_window(0, 0, window=inner, anchor='nw')
 
-MENU = '''
-============== MENU ==============
-1) Criar tabelas
-2) Remover tabelas
-3) Upload de arquivo
-4) Perguntar sobre um arquivo
-5) Consultas e gráficos prontos (3 exemplos)
-6) Rodar consulta SQL customizada
-0) Sair
-> '''
+    def ajustar():
+        c.update_idletasks()
+        inner.update_idletasks()
 
+        w = min(inner.winfo_reqwidth(), max_width)
+        inner.config(width=w)
+        c.config(width=w)
 
-def menu():
-    while True:
-        try:
-            op = input(MENU).strip()
-        except (EOFError, KeyboardInterrupt):
-            print('\nTchau!')
-            return
+        # peça para o HTMLLabel recalcular a altura com a nova largura
+        if remetente == 'IA' and hasattr(content, 'fit_height'):
+            content.fit_height()
 
-        if op == '1':
-            create_all()
-        elif op == '2':
-            conf = input('Tem certeza? (digite SIM): ').strip().upper()
-            if conf == 'SIM':
-                drop_all()
-        elif op == '3':
-            path = input('Caminho do arquivo: ').strip().strip('"')
-            if not os.path.isfile(path):
-                print('[ERRO] Arquivo não encontrado.')
-                continue
-            with SessionLocal() as sess:
-                upload_file(sess, path)
-        elif op == '4':
-            try:
-                arquivo_id = int(input('ID do arquivo: '))
-            except ValueError:
-                print('ID inválido')
-                continue
-            pergunta = input('Pergunta: [voltar retorna ao menu] ')
-            while pergunta != 'voltar':
-                with SessionLocal() as sess:
-                    try:
-                        resp = answer_question(sess, arquivo_id, pergunta)
-                        print('\n===== RESPOSTA IA =====\n' + resp + '\n=======================\n')
-                    except Exception as e:
-                        print(f'[ERRO] {e}')
-                    pergunta = input('Pergunta: [voltar retorna ao menu] ')
-        elif op == '5':
-            print("\n[INFO] Executando consultas e gerando gráficos prontos...")
+        c.update_idletasks()
+        inner.update_idletasks()
 
-            # Consulta 1: quantidade de arquivos por tipo
-            sql1 = (
-                '''SELECT t.nome AS tipo, COUNT(a.id) AS qtde 
-                FROM tipo_arquivo t LEFT JOIN arquivo a ON a.tipo_id = t.id 
-                GROUP BY t.nome ORDER BY qtde DESC'''
-            )
-            run_and_plot(titulo='QTDE arquivos x tipo', eixo_x='Tipo', eixo_y='Quantidade' ,sql=sql1,descricao='Quantidade de arquivos por tipo', chart_type='barras')
+        h = max(inner.winfo_reqheight(), content.winfo_reqheight() + 2*pad_int if remetente == 'IA' else inner.winfo_reqheight())
+        c.config(height=h)
 
-            # Consulta 2: número de perguntas por arquivo
-            sql2 = (
-                '''SELECT a.nome AS arquivo, COUNT(p.id) AS perguntas 
-                FROM arquivo a LEFT JOIN pergunta p ON p.arquivo_id = a.id 
-                GROUP BY a.nome ORDER BY perguntas DESC'''
-            )
-            run_and_plot(titulo='Número de perguntas x arquivo', eixo_x='Arquivo',eixo_y='Número de perguntas',sql=sql2, descricao='Perguntas por arquivo', chart_type='barras')
+        c.coords(window_id, 0, 0)
+        c.delete('bubble')
+        _rounded_rect(c, 1, 1, w-1, h-1, r=14, fill=cor_bg, outline=cor_borda, width=1.5, tags='bubble')
+        c.tag_lower('bubble')
 
-            # Consulta 3: tempo médio de resposta por tipo de arquivo
-            sql3 = (
-                '''SELECT t.nome AS tipo, COALESCE(AVG(r.tempo_execucao),0) AS tempo_medio_s 
-                FROM tipo_arquivo t 
-                LEFT JOIN arquivo a ON a.tipo_id = t.id 
-                LEFT JOIN pergunta p ON p.arquivo_id = a.id 
-                LEFT JOIN resposta_ia r ON r.pergunta_id = p.id 
-                GROUP BY t.nome ORDER BY tempo_medio_s DESC'''
-            )
-            run_and_plot(titulo='Tempo médio de resposta por tipo de arquivo',eixo_x='Tipo', eixo_y='Tempo (s)',sql=sql3, descricao='Tempo médio (s)', chart_type='linhas')
+        frame_mensagens.update_idletasks()
+        canvas.configure(scrollregion=canvas.bbox('all'))
+        canvas.yview_moveto(1.0)
 
-            print("\n[OK] Consultas e gráficos prontos concluídos.\n")
+    ajustar()
+    wrap.after(50, ajustar)
 
+exibir_mensagem('Sistema', '[OK] Interface inicializada com sucesso!')
 
-        elif op == '6':
-            # ------------------------------------------------------------
-            # Consulta SQL customizada (salva resultado, sem gráfico)
-            # ------------------------------------------------------------
-            with SessionLocal() as sess:
-                sql = input('SQL (apenas SELECT): ').strip()
+def criar_tabelas():
+    try:
+        msg = m.create_all()
+        exibir_mensagem('Sistema', msg)
+        messagebox.showinfo('Sucesso', msg)
+    except Exception as e:
+        exibir_mensagem('Erro', str(e))
+        messagebox.showerror('Erro', str(e))
 
-                try:
-                    if not sql.lower().startswith('select'):
-                        print('[ERRO] Apenas consultas SELECT são permitidas nesta opção.')
-                        continue
-                    descricao = input('Descrição breve da consulta: ').strip()
-                    # Cria registro da consulta
-                    cons = ConsultaSQL(sql=sql, descricao=descricao)
-                    sess.add(cons)
-                    sess.commit()
+def remover_tabelas():
+    if not m.verificar_banco():
+        msg = 'Não é possível remover as tabelas, porque o banco ainda não existe. Clique no botão "Criar tabelas" para criar o banco.'
+        exibir_mensagem('Sistema', msg)
+        return messagebox.showerror('ERRO', msg)
+    conf = messagebox.askyesno('Confirmação', 'Tem certeza que deseja remover todas as tabelas e pastas?')
+    if not conf:
+        return messagebox.showerror('ERRO', 'Ação cancelada pelo usuário.')
+    janela.bell()
+    aviso = messagebox.askyesno('AVISO', 'Essa ação é irreversível! Deseja continuar?')
+    if not aviso:
+        return messagebox.showerror('ERRO', 'Ação cancelada pelo usuário.')
+    try:
+        msg = m.drop_all()
+        exibir_mensagem('Sistema', msg)
+        messagebox.showinfo('INFO', msg)
+    except Exception as e:
+        exibir_mensagem('Erro', str(e))
+        messagebox.showerror('Erro', str(e))
 
-                    # Executa a consulta
-                    df = pd.read_sql_query(sql, con=engine)
-                    linhas, colunas = df.shape
+def upload_arquivo():
+    if not m.verificar_banco():
+        msg = 'Não é possível fazer upload de arquivos, porque o banco ainda não existe. Clique no botão "Criar tabelas" para criar o banco.'
+        exibir_mensagem('Erro', msg)
+        messagebox.showerror('Erro', msg)
+        return
 
-                    # Gera arquivo Excel com os resultados
-                    timestamp = int(time.time())
-                    filename = f'consulta_custom_{cons.id}_{timestamp}.xlsx'
-                    path = os.path.join(RESULT_CONSULTA_DIR, filename)
-                    df.to_excel(path, index=False)
+    caminho = filedialog.askopenfilename(
+        title='Selecione um arquivo',
+        filetypes=[
+            ('Todos os suportados', '*.pdf; *.docx; *.xlsx; *.xls; *.csv; *.txt; *.md'),
+            ('PDF', '*.pdf'),
+            ('Word', '*.docx'),
+            ('Excel', '*.xlsx; *.xls'),
+            ('CSV', '*.csv'),
+            ('TXT', '*.txt'),
+            ('Markdown', '*.md'),
+        ]
+    )
+    if not caminho:
+        return
 
-                    # Cria o registro na nova tabela ResultadoConsulta
-                    resultado = ResultadoConsulta(
-                        consulta_id=cons.id,
-                        caminho_arquivo=path,
-                        dados_json=json.loads(df.to_json(orient='records')),
-                        linhas=linhas,
-                        colunas=colunas
-                    )
-                    sess.add(resultado)
-                    sess.commit()
+    try:
+        with m.SessionLocal() as sess:
+            resultado = m.upload_file(sess, caminho)
 
-                    print(f'\n[OK] Consulta {cons.id} executada com sucesso!')
-                    print(f'[INFO] {linhas} linhas × {colunas} colunas retornadas.')
-                    print(f'[RESULTADO] Salvo em: {path}\n')
+        arq_id = resultado['id']
 
-                except Exception as e:
-                    print(f'[ERRO] Falha ao executar consulta: {e}')
-
-        elif op == '0':
-            print('Até mais!')
-            break
+        if resultado['duplicado']:
+            exibir_mensagem('Sistema', f'O arquivo já existe no banco. ID={arq_id}. Upload pulado')
         else:
-            print('Opção inválida.')
+            exibir_mensagem('Sistema', f'Upload concluído com sucesso. ID={arq_id}')
+            time.sleep(0.5)
+
+        df_logs = pd.read_sql_query(
+            f'''
+            SELECT acao, detalhe, data 
+            FROM log 
+            WHERE arquivo_id={arq_id} 
+            ORDER BY data DESC 
+            LIMIT 1
+            ''',
+            con=m.engine
+        )
+
+        if not df_logs.empty:
+            log = df_logs.iloc[0]
+            cor = '#ffe6e6' if 'erro' in log['acao'].lower() else '#e6ffe6'
+            if 'duplicado' in log['acao'].lower():
+                cor = '#fff8dc'
+            hora = pd.to_datetime(log['data']).strftime('%d-%m-%y-%H:%M:%S')
+            exibir_mensagem('Log', f"[{hora}] {log['acao']} → {log['detalhe']}", cor)
+
+    except Exception as e:
+        exibir_mensagem('Erro', str(e))
+        messagebox.showerror('Erro', str(e))
+
+id_arquivo_escolhido = None
+
+def perguntar_arquivo():
+    if not m.verificar_banco():
+        msg = 'Não é possível perguntar sobre arquivos, porque o banco ainda não existe. Clique no botão "Criar tabelas" para criar o banco.'
+        exibir_mensagem('Erro', msg)
+        messagebox.showerror('Erro', msg)
+        return
+
+    global id_arquivo_escolhido
+
+    try:
+        df = pd.read_sql_query("SELECT id, nome FROM arquivo ORDER BY id DESC", con=m.engine)
+    except Exception as e:
+        exibir_mensagem('Erro', f'Erro ao listar arquivos: {e}')
+        return messagebox.showerror('Erro', str(e))
+    if df.empty:
+        return messagebox.showerror('ERRO', 'Nenhum arquivo encontrado. Faça upload primeiro.')
+
+    janela_id = tk.Toplevel(janela)
+    janela_id.title('Selecionar arquivo para perguntas')
+    janela_id.geometry('420x160')
+    janela_id.transient(janela)
+    janela_id.grab_set()
+
+    ttk.Label(janela_id, text='Escolha o arquivo:').pack(pady=10)
+    combo = ttk.Combobox(janela_id, width=50, values=df['nome'].tolist(), state='readonly')
+    combo.pack(pady=5)
+
+    def confirmar():
+        global id_arquivo_escolhido
+        nome = combo.get().strip()
+        if not nome:
+            messagebox.showwarning('Aviso', 'Selecione um arquivo.')
+            return
+        try:
+            id_arquivo_escolhido = int(df.loc[df['nome'] == nome, 'id'].iloc[0])
+        except Exception as e:
+            messagebox.showerror('Erro', f'Seleção inválida: {e}')
+            return
+        exibir_mensagem('Sistema', f'Arquivo "{nome}" selecionado (ID={id_arquivo_escolhido}) para perguntas.')
+        janela_id.destroy()
+
+    ttk.Button(janela_id, text='Confirmar', style='Custom.TButton', command=confirmar).pack(pady=10)
+
+def enviar_pergunta():
+    global id_arquivo_escolhido
+    pergunta = entry_enviar.get().strip()
+    if not pergunta:
+        return
+    if id_arquivo_escolhido is None:
+        messagebox.showwarning('Aviso', 'Selecione um arquivo antes de perguntar.')
+        return
+    exibir_mensagem('Você', pergunta)
+    entry_enviar.delete(0, tk.END)
+    try:
+        with m.SessionLocal() as sess:
+            resposta = m.answer_question(sess, id_arquivo_escolhido, pergunta)
+        exibir_mensagem('IA', resposta)
+    except Exception as e:
+        exibir_mensagem('Erro', str(e))
+        messagebox.showerror('Erro', str(e))
+
+def graficos_prontos():
+    if not m.verificar_banco():
+        msg = 'Não é possível gerar os gráficos prontos, porque o banco ainda não existe. Clique no botão "Criar tabelas" para criar o banco.'
+        exibir_mensagem('Erro', msg)
+        messagebox.showerror('Erro', msg)
+        return
+    
+    try:
+        df = pd.read_sql_query('SELECT id, nome FROM arquivo ORDER BY id DESC', con=m.engine)
+    except Exception as e:
+        exibir_mensagem('Erro', f'Erro ao gerar os gráficos: {e}')
+        messagebox.showerror('Erro', str(e))
+        return
+
+    if df.empty:
+        messagebox.showerror('Aviso', 'Nenhum arquivo encontrado. Faça upload primeiro.')
+        return
+
+    exibir_mensagem('Sistema', 'Executando consultas e gráficos prontos...')
+    try:
+        sqls = [
+            (
+                "Quantidade de arquivos x tipo",
+                "Tipo",
+                "Quantidade",
+                '''
+                SELECT t.nome AS tipo, COUNT(a.id) AS qtde
+                FROM tipo_arquivo t
+                LEFT JOIN arquivo a ON a.tipo_id = t.id
+                GROUP BY t.nome ORDER BY qtde DESC
+                ''',
+                "Arquivos por tipo",
+                "barras"
+            ),
+            (
+                "Perguntas x arquivo",
+                "Arquivo",
+                "Nº perguntas",
+                '''
+                SELECT a.nome AS arquivo, COUNT(p.id) AS perguntas
+                FROM arquivo a
+                LEFT JOIN pergunta p ON p.arquivo_id = a.id
+                GROUP BY a.nome ORDER BY perguntas DESC
+                ''',
+                "Perguntas por arquivo",
+                "barras"
+            ),
+            (
+                "Tempo médio de resposta x tipo",
+                "Tipo",
+                "Tempo (s)",
+                '''
+                SELECT t.nome AS tipo, COALESCE(AVG(r.tempo_execucao),0) AS tempo_medio_s
+                FROM tipo_arquivo t
+                LEFT JOIN arquivo a ON a.tipo_id = t.id
+                LEFT JOIN pergunta p ON p.arquivo_id = a.id
+                LEFT JOIN resposta_ia r ON r.pergunta_id = p.id
+                GROUP BY t.nome ORDER BY tempo_medio_s DESC
+                ''',
+                "Tempo médio de resposta",
+                "linhas"
+            ),
+        ]
+        for args in sqls:
+            m.run_and_plot(*args)
+        exibir_mensagem('Sistema', 'Consultas e gráficos prontos concluídos.')
+    except Exception as e:
+        exibir_mensagem('Erro', str(e))
+        messagebox.showerror('Erro', str(e))
+
+def consulta_sql():
+    if not m.verificar_banco():
+        msg = 'Não é possível executar consultas, porque as tabelas do banco estão vazias. Faça upload de novos arquivos para fazer fazer perguntas.'
+        exibir_mensagem('Erro', msg)
+        return messagebox.showerror('Erro', msg)
+    try:
+        df = pd.read_sql_query('''SELECT a.id as id,
+                                a.nome as nome
+                                FROM arquivo a
+                                ORDER BY nome''', con=m.engine)
+        if df.empty:
+            return messagebox.showerror('ERRO', 'Nenhum arquivo disponível para consulta.')
+    except Exception as e:
+        return messagebox.showerror('Erro', f'Falha ao buscar arquivos: {e}')
+        
+    janela_sql = tk.Toplevel(janela)
+    janela_sql.title('Consulta SQL customizada')
+    janela_sql.geometry('600x450')
+    janela_sql.transient(janela)
+    janela_sql.grab_set()
+    
+    ttk.Label(janela_sql, text='Digite uma consulta SELECT:').pack(pady=10)
+    entry_sql = tk.Text(janela_sql, height=15, width=80, font=('Consolas', 10))
+    entry_sql.pack(padx=10, fill='both', expand=True)
+
+    def executar():
+        sql = entry_sql.get('1.0', 'end').strip()
+        if not sql.lower().startswith('select'):
+            messagebox.showwarning('Erro', 'Apenas consultas SELECT são permitidas.')
+            return
+        try:
+            df = pd.read_sql_query(sql, con=m.engine)
+            if df.empty:
+                exibir_mensagem('Sistema', 'Nenhum resultado retornado.')
+                messagebox.showinfo('Aviso', 'Nenhum resultado retornado.')
+                return
+            path = os.path.join('consultas', f'consulta_{int(time.time())}.xlsx')
+            df.to_excel(path, index=False)
+            exibir_mensagem('Sistema', f'Consulta executada com sucesso. Resultado salvo em {path}')
+            messagebox.showinfo('Sucesso', f'Resultado salvo em:\n{path}')
+        except Exception as e:
+            exibir_mensagem('Erro', str(e))
+            messagebox.showerror('Erro', str(e))
+
+    ttk.Button(janela_sql, text='Executar', style='Custom.TButton', command=executar).pack(pady=10)
+
+def remover_arquivo():
+    if not m.verificar_banco():
+        msg = 'Não é possível remover arquivos, porque o banco ainda não existe. Clique no botão "Criar tabelas" para criar o banco.'
+        exibir_mensagem('Erro', msg)
+        messagebox.showerror('Erro', msg)
+        return
+    try:
+        df = pd.read_sql_query('''SELECT a.id as id,
+                                a.nome as nome
+                                FROM arquivo a
+                                ORDER BY nome''', con=m.engine)
+        if df.empty:
+            return messagebox.showerror('ERRO', 'Nenhum arquivo disponível para remoção.')
+    except Exception as e:
+        return messagebox.showerror('Erro', f'Falha ao buscar arquivos: {e}')
+    
+    janela_remover = tk.Toplevel(janela)
+    janela_remover.title('Remover arquivo')
+    janela_remover.geometry('380x200')
+
+    ttk.Label(janela_remover, text='Selecione o arquivo para remover:').pack(pady=10)
+    combo = ttk.Combobox(janela_remover, width=60, values=df['nome'].to_list())
+    combo.pack(pady=5)
+
+    def confirmar_remocao():
+        nome = combo.get()
+        if not nome:
+            messagebox.showwarning('Aviso', 'Selecione um arquivo.')
+            return
+        arq_id = int(df.loc[df['nome'] == nome, 'id'].iloc[0])
+        conf = messagebox.askyesno('Confirmação', f'Tem certeza que deseja remover o arquivo "{nome}" (ID={arq_id})?')
+        if conf:
+            janela_remover.bell()
+            aviso = messagebox.askyesno('Confirmação', 'Essa ação é irreversível! Deseja continuar?')
+            if not aviso:
+                return messagebox.showerror('ERRO', 'Ação cancelada pelo usuário.')
+            with m.SessionLocal() as sess:
+                resultado = m.remove_file(sess, arq_id)
+            exibir_mensagem('Sistema', resultado)
+            if '[OK]' in resultado:
+                messagebox.showinfo('Sucesso', resultado)
+            else:
+                messagebox.showerror('Erro', resultado)
+            janela_remover.destroy()
+        return
+
+    ttk.Button(janela_remover, text='Remover', style='Custom.TButton', command=confirmar_remocao).pack(pady=15)
+
+def listar_arquivos():
+    if not m.verificar_banco():
+        msg = 'Não é possível listar os arquivos, porque o banco ainda não existe. Clique no botão "Criar tabelas" para criar o banco.'
+        exibir_mensagem('Erro', msg)
+        return messagebox.showerror('Erro', msg)
 
 
-if __name__ == '__main__':
-    menu()
+    if not m.verificar_tabelas():
+        msg = 'Não é possível listar os arquivos, porque as tabelas estão vazias. Faça upload de novos arquivos primeiro.'
+        exibir_mensagem('Erro', msg)
+        messagebox.showerror('Erro', msg)
+        return
+    
+    try:
+        df_arquivos = pd.read_sql_query('''
+            SELECT a.id, a.nome
+            FROM arquivo a  
+            ORDER BY a.id
+        ''', m.engine)
+        lista_arquivos_ids = df_arquivos['id'].tolist()
+        lista_arquivos_nomes = df_arquivos['nome'].tolist()
+        arquivos = '\n'.join(f'ID: {id} | Nome: {nome}' for id, nome in zip(lista_arquivos_ids, lista_arquivos_nomes))
+        if df_arquivos.empty:
+            return messagebox.showerror('ERRO', 'Nenhum arquivo encontrado. Faça upload primeiro.')
+    except Exception as e:
+        exibir_mensagem('Erro', str(e))
+        messagebox.showerror('Erro', str(e))
+        return
+    
+    messagebox.showinfo('Lista de Arquivos', arquivos)
+
+def sair():
+    sair = messagebox.askyesno('SAIR', 'Tem certeza que deseja sair?')
+    if sair:
+        janela.destroy()
+
+
+botoes = {
+    'Criar tabelas': criar_tabelas,
+    'Remover tabelas': remover_tabelas,
+    'Remover arquivo': remover_arquivo,
+    'Listar arquivos': listar_arquivos,
+    'Upload de arquivo': upload_arquivo,
+    'Perguntar sobre um arquivo': perguntar_arquivo,
+    '3 Gráficos prontos': graficos_prontos,
+    'Consulta SQL customizada': consulta_sql,
+    'Sair': sair,
+}
+
+for nome, funcao in botoes.items():
+    ttk.Button(frame_menu, text=nome, style='Custom.TButton', width=30, command=funcao).pack(pady=5, padx=10)
+
+frame_entry = tk.Frame(frame_chat, bg='white')
+frame_entry.pack(fill='x', padx=10, pady=10)
+
+entry_enviar = ttk.Entry(frame_entry, font=('Segoe UI', 11))
+entry_enviar.pack(side='left', fill='x', expand=True, padx=(0, 5))
+
+ttk.Button(frame_entry, text='Enviar', style='Custom.TButton', command=enviar_pergunta).pack(side='right')
+
+janela.bind('<Return>', lambda e: enviar_pergunta())
+janela.mainloop()
