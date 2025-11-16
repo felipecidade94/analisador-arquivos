@@ -25,7 +25,7 @@ from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 
 
 try:
-    import fitz 
+    import fitz
 except Exception:
     fitz = None
 try:
@@ -49,15 +49,21 @@ GROQ_API_KEY = os.getenv('GROQ_API_KEY')
 GROQ_API_MODEL = os.getenv('GROQ_API_MODEL')
 
 if not DATABASE_URL:
-    raise RuntimeError('Defina DATABASE_URL no .env (ex: postgresql+psycopg2://user:pass@host:5432/db)')
+    raise RuntimeError(
+        'Defina DATABASE_URL no .env (ex: postgresql+psycopg2://user:pass@host:5432/db)'
+    )
 
 if not GROQ_API_KEY:
     print('[AVISO] GROQ_API_KEY não definido. Funções de LLM ficarão limitadas até você configurar.')
 
-engine = create_engine(os.getenv("DATABASE_URL"))
+engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False)
 Base = declarative_base()
 
+
+# ---------------------------------------------------------------------
+# MODELOS
+# ---------------------------------------------------------------------
 class TipoArquivo(Base):
     __tablename__ = 'tipo_arquivo'
     id = Column(Integer, primary_key=True)
@@ -168,13 +174,23 @@ class Resumo(Base):
     arquivo = relationship('Arquivo', back_populates='resumo')
 
 
+# ---------------------------------------------------------------------
+# CONSTANTES
+# ---------------------------------------------------------------------
 CHUNK_SIZE = 1200
 CHUNK_OVERLAP = 150
 EMBEDDING_MODEL = 'sentence-transformers/all-MiniLM-L6-v2'
 INDEX_DIR = 'indices_faiss'
 CHART_DIR = 'charts'
 RESULT_CONSULTA_DIR = 'consultas'
+caminhos = (INDEX_DIR, CHART_DIR, RESULT_CONSULTA_DIR)
 
+tipos_arquivos = ['pdf', 'txt', 'xlsx', 'xls', 'docx', 'md', 'csv']
+
+
+# ---------------------------------------------------------------------
+# FUNÇÕES AUXILIARES
+# ---------------------------------------------------------------------
 def sha256_bytes(b: bytes) -> str:
     return hashlib.sha256(b).hexdigest()
 
@@ -225,12 +241,13 @@ def extract_text_from_csv(data: bytes) -> str:
 
 
 def extract_text_from_excel(data: bytes) -> str:
-    # versão mais robusta, evita depender de to_markdown
     bio = io.BytesIO(data)
     dfs = pd.read_excel(bio, sheet_name=None)
     parts = []
-    for sheet, df in dfs.items():
-        parts.append(f"# Sheet: {sheet}\n" + df.to_csv(index=False))
+    parts.extend(
+        f"# Sheet: {sheet}\n" + df.to_csv(index=False)
+        for sheet, df in dfs.items()
+    )
     return '\n\n'.join(parts)
 
 
@@ -271,22 +288,21 @@ def extract_content_by_type(tipo: str, data: bytes) -> str:
     return ''
 
 
-# ------------------------------------------------------------
-# Embeddings / Índice por arquivo
-# ------------------------------------------------------------
+# ---------------------------------------------------------------------
+# FAISS / EMBEDDINGS
+# ---------------------------------------------------------------------
 def build_or_load_index_for_file(sess, conteudo: ConteudoExtraido) -> Tuple[FAISS, str]:
-    """Gera chunks e constrói um índice FAISS por arquivo, apenas se houver texto."""
     texto = conteudo.texto or ''
     splitter = RecursiveCharacterTextSplitter(chunk_size=CHUNK_SIZE, chunk_overlap=CHUNK_OVERLAP)
     docs = splitter.create_documents([texto])
 
-    # filtra documentos vazios
     docs = [d for d in docs if getattr(d, "page_content", "").strip()]
     if not docs:
         raise ValueError('O arquivo não possui conteúdo indexável, a extração retornou texto vazio.')
 
     emb = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
     index_path = os.path.join(INDEX_DIR, f'faiss_{conteudo.arquivo_id}.index')
+
     if os.path.exists(index_path):
         vs = FAISS.load_local(index_path, emb, allow_dangerous_deserialization=True)
     else:
@@ -306,12 +322,13 @@ def build_or_load_index_for_file(sess, conteudo: ConteudoExtraido) -> Tuple[FAIS
     return vs, index_path
 
 
-# ------------------------------------------------------------
-# Perguntas e respostas (Groq + RAG)
-# ------------------------------------------------------------
+# ---------------------------------------------------------------------
+# RAG / PERGUNTAS
+# ---------------------------------------------------------------------
 SYSTEM_PROMPT = '''
-Você é um assistente que responde com base no arquivo fornecido, de forma amigável. Você pode dar sua opinião APENAS quando perguntado. Seja conciso nas respostas e traga pontos importantes quando possível. Se não souber a resposta, diga claramente que não sabe. Seja prestativo, perguntando se o usuário quer mais informações após cada resposta sua. O formato de resposta deve ser em markdown, mas sem usar * nem # nas respostas. Quando achar necessário, pode criar tabelas, contudo não exagere, também é muito importante escrever normalmente!! NÃO invente informações que não sabe.
+Você é um assistente que responde com base no arquivo fornecido, de forma amigável. Você pode dar sua opinião APENAS quando perguntado. Seja completo nas respostas e traga pontos importantes quando possível. Se não souber a resposta, diga claramente que não sabe. Seja prestativo, perguntando se o usuário quer mais informações após cada resposta sua. O formato de resposta deve ser em markdown. Quando achar necessário, pode criar tabelas, contudo não exagere, também é muito importante escrever normalmente!! NÃO invente informações que não sabe.
 '''
+
 
 def answer_question(sess, arquivo_id: int, pergunta_texto: str) -> str:
     arq = sess.get(Arquivo, arquivo_id)
@@ -324,7 +341,6 @@ def answer_question(sess, arquivo_id: int, pergunta_texto: str) -> str:
 
     start = time.time()
 
-    # tenta carregar ou construir o índice de forma segura
     try:
         embedding_meta = (
             sess.query(Embedding)
@@ -339,20 +355,24 @@ def answer_question(sess, arquivo_id: int, pergunta_texto: str) -> str:
             emb = HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL)
             vs = FAISS.load_local(embedding_meta.index_path, emb, allow_dangerous_deserialization=True)
     except Exception as e:
-        sess.add(Log(arquivo_id=arquivo_id, acao='erro_indexacao', detalhe=str(e))); sess.commit()
+        sess.add(Log(arquivo_id=arquivo_id, acao='erro_indexacao', detalhe=str(e)))
+        sess.commit()
         resp_texto = f'Não consegui indexar este arquivo. Motivo: {e}'
-        sess.add(RespostaIA(pergunta_id=q.id, resposta=resp_texto, tempo_execucao=time.time()-start)); sess.commit()
+        sess.add(RespostaIA(pergunta_id=q.id, resposta=resp_texto, tempo_execucao=time.time() - start))
+        sess.commit()
         return resp_texto
 
     try:
         retrieved_docs = vs.similarity_search(pergunta_texto, k=5)
     except Exception as e:
         retrieved_docs = []
-        sess.add(Log(arquivo_id=arquivo_id, acao='erro_busca', detalhe=str(e))); sess.commit()
+        sess.add(Log(arquivo_id=arquivo_id, acao='erro_busca', detalhe=str(e)))
+        sess.commit()
 
     if not retrieved_docs:
         resp_texto = 'Não encontrei trechos relevantes neste arquivo para responder. Tente outra pergunta ou verifique se o conteúdo foi extraído corretamente.'
-        sess.add(RespostaIA(pergunta_id=q.id, resposta=resp_texto, tempo_execucao=time.time()-start)); sess.commit()
+        sess.add(RespostaIA(pergunta_id=q.id, resposta=resp_texto, tempo_execucao=time.time() - start))
+        sess.commit()
         return resp_texto
 
     context = '\n\n'.join(d.page_content for d in retrieved_docs)
@@ -382,8 +402,9 @@ def answer_question(sess, arquivo_id: int, pergunta_texto: str) -> str:
     return resposta_texto
 
 
-tipos_arquivos = ['pdf', 'txt', 'xlsx', 'xls', 'docx', 'md', 'csv']
-
+# ---------------------------------------------------------------------
+# UPLOAD / REMOÇÃO / LIMPEZA
+# ---------------------------------------------------------------------
 def upload_file(sess, filepath: str) -> dict:
     with open(filepath, 'rb') as f:
         data = f.read()
@@ -468,6 +489,104 @@ def upload_file(sess, filepath: str) -> dict:
     return {'id': arq.id, 'duplicado': False}
 
 
+def remover_pasta_com_permissao(caminho: str) -> None:
+    if not os.path.exists(caminho):
+        return
+
+    for root, dirs, files in os.walk(caminho, topdown=False):
+        for nome_arquivo in files:
+            file_path = os.path.join(root, nome_arquivo)
+            with contextlib.suppress(Exception):
+                os.chmod(file_path, stat.S_IWRITE)
+            try:
+                os.remove(file_path)
+            except PermissionError:
+                time.sleep(0.1)
+                with contextlib.suppress(Exception):
+                    os.remove(file_path)
+
+        for nome_dir in dirs:
+            dir_path = os.path.join(root, nome_dir)
+            with contextlib.suppress(Exception):
+                os.rmdir(dir_path)
+
+    with contextlib.suppress(Exception):
+        os.rmdir(caminho)
+
+
+def remove_file(sess, arquivo_id: int) -> str:
+    arq = sess.get(Arquivo, arquivo_id)
+
+    if not arq:
+        return f"[ERRO] Nenhum arquivo encontrado com ID={arquivo_id}."
+
+    try:
+        if arq.conteudo_extraido:
+            emb = sess.query(Embedding).filter_by(conteudo_id=arq.conteudo_extraido.id).one_or_none()
+            if emb and emb.index_path and os.path.exists(emb.index_path):
+                try:
+                    gc.collect()
+                    time.sleep(0.1)
+                    remover_pasta_com_permissao(emb.index_path)
+                except Exception as e:
+                    sess.add(Log(
+                        arquivo_id=arquivo_id,
+                        acao='erro_remover_indice',
+                        detalhe=f'Falha ao remover índice {emb.index_path}: {e}'
+                    ))
+                sess.delete(emb)
+
+        perguntas = sess.query(Pergunta).filter_by(arquivo_id=arquivo_id).all()
+        for p in perguntas:
+            if p.resposta:
+                sess.delete(p.resposta)
+            sess.delete(p)
+
+        if arq.resumo:
+            sess.delete(arq.resumo)
+
+        logs = sess.query(Log).filter_by(arquivo_id=arquivo_id).all()
+        for l in logs:
+            sess.delete(l)
+
+        if arq.conteudo_extraido:
+            sess.delete(arq.conteudo_extraido)
+
+        sess.delete(arq)
+
+        sess.add(Log(acao="arquivo_removido", detalhe=f"Arquivo ID={arquivo_id} removido com sucesso."))
+        sess.commit()
+
+        return f"[OK] Arquivo ID={arquivo_id} e dados relacionados foram removidos com sucesso."
+
+    except Exception as e:
+        sess.rollback()
+        return f"[ERRO] Falha ao remover o arquivo ID={arquivo_id}: {e}"
+
+
+def cleanup_indices():
+    with contextlib.suppress(Exception):
+        gc.collect()
+        time.sleep(0.2)
+
+        if not os.path.exists(INDEX_DIR):
+            return
+
+        for f in os.listdir(INDEX_DIR):
+            path = os.path.join(INDEX_DIR, f)
+            if os.path.isdir(path):
+                remover_pasta_com_permissao(path)
+            else:
+                with contextlib.suppress(Exception):
+                    os.chmod(path, stat.S_IWRITE)
+                    os.remove(path)
+
+        return '[LIMPEZA] Índices FAISS limpos.'
+
+
+# ---------------------------------------------------------------------
+# CONSULTAS / GRÁFICOS
+# ---------------------------------------------------------------------
 def run_and_plot(titulo, eixo_x, eixo_y, sql: str, descricao: str, chart_type: str = 'barras') -> None:
     df = pd.read_sql(sql, con=engine)
     os.makedirs(CHART_DIR, exist_ok=True)
@@ -501,88 +620,20 @@ def run_and_plot(titulo, eixo_x, eixo_y, sql: str, descricao: str, chart_type: s
     plt.close()
     return f'Gráfico salvo em {img_path}'
 
-caminhos = (INDEX_DIR, CHART_DIR, RESULT_CONSULTA_DIR)
 
-def remove_file(sess, arquivo_id: int) -> str:
-    """Remove um arquivo e todos os dados relacionados, dado seu ID."""
-    arq = sess.get(Arquivo, arquivo_id)
+# ---------------------------------------------------------------------
+# VERIFICAÇÕES / CRIAÇÃO / DROP
+# ---------------------------------------------------------------------
+def verificar_banco() -> bool:
+    return any(os.path.exists(c) for c in caminhos)
 
-    if not arq:
-        return f"[ERRO] Nenhum arquivo encontrado com ID={arquivo_id}."
 
+def verificar_tabelas() -> bool:
     try:
-        # Remover índice FAISS, se existir
-        if arq.conteudo_extraido:
-            emb = sess.query(Embedding).filter_by(conteudo_id=arq.conteudo_extraido.id).one_or_none()
-            if emb and emb.index_path and os.path.exists(emb.index_path):
-                try:
-                    gc.collect()
-                    time.sleep(0.1)
-                    os.chmod(emb.index_path, stat.S_IWRITE)
-                    os.remove(emb.index_path)
-                except PermissionError:
-                    try:
-                        temp_path = emb.index_path + f".old_{int(time.time())}"
-                        os.rename(emb.index_path, temp_path)
-                        time.sleep(0.1)
-                        os.remove(temp_path)
-                    except Exception:
-                        pendente = emb.index_path + ".pending_delete"
-                        try:
-                            os.rename(emb.index_path, pendente)
-                        except Exception:
-                            pass
-                sess.delete(emb)
+        df = pd.read_sql("SELECT tablename FROM pg_tables WHERE schemaname='public';", con=engine)
+    except Exception:
+        return False
 
-        perguntas = sess.query(Pergunta).filter_by(arquivo_id=arquivo_id).all()
-        for p in perguntas:
-            if p.resposta:
-                sess.delete(p.resposta)
-            sess.delete(p)
-
-        # Remover resumo
-        if arq.resumo:
-            sess.delete(arq.resumo)
-
-        logs = sess.query(Log).filter_by(arquivo_id=arquivo_id).all()
-        for l in logs:
-            sess.delete(l)
-
-        if arq.conteudo_extraido:
-            sess.delete(arq.conteudo_extraido)
-
-        sess.delete(arq)
-
-        sess.add(Log(acao="arquivo_removido", detalhe=f"Arquivo ID={arquivo_id} removido com sucesso."))
-        sess.commit()
-
-        return f"[OK] Arquivo ID={arquivo_id} e dados relacionados foram removidos com sucesso."
-
-    except Exception as e:
-        sess.rollback()
-        return f"[ERRO] Falha ao remover o arquivo ID={arquivo_id}: {e}"
-
-
-def cleanup_indices():
-    """Força liberação e remoção de índices FAISS que ficaram travados."""
-    with contextlib.suppress(Exception):
-        gc.collect()
-        time.sleep(0.2)
-        for f in os.listdir(INDEX_DIR):
-            if f.endswith(".index"):
-                path = os.path.join(INDEX_DIR, f)
-                with contextlib.suppress(Exception):
-                    os.chmod(path, stat.S_IWRITE)
-                    os.remove(path)
-                    return f"[LIMPEZA] Índice removido: {path}"
-
-
-def verificar_banco():
-    # considera criado se ao menos uma das pastas base existir
-    return any(os.path.exists(caminho) for caminho in caminhos)
-
-def verificar_tabelas():
-    df = pd.read_sql("SELECT tablename FROM pg_tables WHERE schemaname='public';", con=engine)
     tabelas_esperadas = {
         'tipo_arquivo', 'arquivo', 'conteudo_extraido', 'embedding',
         'pergunta', 'resposta_ia', 'consulta_sql', 'resultado_consulta',
@@ -593,31 +644,32 @@ def verificar_tabelas():
 
 
 def create_all():
-    for caminho in caminhos:
-        if os.path.exists(caminho):
-            return '[INFO] Tabelas já foram criadas!'
     os.makedirs(INDEX_DIR, exist_ok=True)
     os.makedirs(CHART_DIR, exist_ok=True)
     os.makedirs(RESULT_CONSULTA_DIR, exist_ok=True)
+
     Base.metadata.create_all(engine)
 
     with SessionLocal() as sess:
         for nome in ['pdf', 'docx', 'xlsx', 'xls', 'csv', 'txt', 'md']:
             ensure_tipo(sess, nome)
+
     return '[OK] Tabelas criadas e tipos iniciais inseridos.'
 
 
 def drop_all():
-    for caminho in caminhos:
-        if not os.path.exists(caminho):
-            return '[INFO] Tabelas não encontradas!'
     Base.metadata.drop_all(engine)
+
     for caminho in caminhos:
         if os.path.exists(caminho):
-            shutil.rmtree(caminho)
+            remover_pasta_com_permissao(caminho)
+
     return '[OK] Todas as tabelas foram removidas.'
 
 
+# ---------------------------------------------------------------------
+# MENU DE TERMINAL (opcional)
+# ---------------------------------------------------------------------
 MENU = '''
 ============== MENU ==============
 1) Criar tabelas
@@ -630,6 +682,127 @@ MENU = '''
 0) Sair
 > '''
 
+
+def handle_create_tables():
+    print(create_all())
+
+
+def handle_remove_tables():
+    conf = input('Tem certeza? (digite SIM): ').strip().upper()
+    if conf == 'SIM':
+        print(drop_all())
+
+
+def handle_remove_file():
+    try:
+        arquivo_id = int(input('ID do arquivo: '))
+    except ValueError:
+        print('ID inválido')
+        return
+    conf = input('Tem certeza (digite SIM)?').strip().upper()
+    if conf == 'SIM':
+        with SessionLocal() as sess:
+            try:
+                print(remove_file(sess, arquivo_id))
+            except ValueError:
+                print('ID inválido!')
+
+
+def handle_upload_file():
+    path = input('Caminho do arquivo: ').strip().strip('"')
+    if not os.path.isfile(path):
+        print('[ERRO] Arquivo não encontrado.')
+        return
+    with SessionLocal() as sess:
+        print(upload_file(sess, path))
+
+
+def handle_ask_file():
+    try:
+        arquivo_id = int(input('ID do arquivo: '))
+    except ValueError:
+        print('ID inválido!')
+        return
+    pergunta = input('Pergunta: [voltar retorna ao menu] ')
+    while pergunta != 'voltar':
+        with SessionLocal() as sess:
+            try:
+                resp = answer_question(sess, arquivo_id, pergunta)
+                print('\n===== RESPOSTA IA =====\n' + resp + '\n=======================\n')
+            except Exception as e:
+                print(f'[ERRO] {e}')
+        pergunta = input('Pergunta: [voltar retorna ao menu] ')
+
+
+def handle_ready_graphs():
+    print("\n[INFO] Executando consultas e gerando gráficos prontos...")
+
+    sql1 = '''
+        SELECT t.nome AS tipo, COUNT(a.id) AS qtde
+        FROM tipo_arquivo t
+        LEFT JOIN arquivo a ON a.tipo_id = t.id
+        GROUP BY t.nome ORDER BY qtde DESC
+    '''
+    run_and_plot("Quantidade de arquivos x tipo", "Tipo", "Quantidade", sql1, "Arquivos por tipo", "barras")
+
+    sql2 = '''
+        SELECT a.nome AS arquivo, COUNT(p.id) AS perguntas
+        FROM arquivo a
+        LEFT JOIN pergunta p ON p.arquivo_id = a.id
+        GROUP BY a.nome ORDER BY perguntas DESC
+    '''
+    run_and_plot("Perguntas x arquivo", "Arquivo", "Nº perguntas", sql2, "Perguntas por arquivo", "barras")
+
+    sql3 = '''
+        SELECT t.nome AS tipo, COALESCE(AVG(r.tempo_execucao),0) AS tempo_medio_s
+        FROM tipo_arquivo t
+        LEFT JOIN arquivo a ON a.tipo_id = t.id
+        LEFT JOIN pergunta p ON p.arquivo_id = a.id
+        LEFT JOIN resposta_ia r ON r.pergunta_id = p.id
+        GROUP BY t.nome ORDER BY tempo_medio_s DESC
+    '''
+    run_and_plot("Tempo médio de resposta x tipo", "Tipo", "Tempo (s)", sql3, "Tempo médio de resposta", "linhas")
+    print("\n[OK] Consultas e gráficos concluídos.\n")
+
+
+def handle_custom_sql():
+    with SessionLocal() as sess:
+        sql = input('SQL (apenas SELECT): ').strip()
+        if not sql.lower().startswith('select'):
+            print('[ERRO] Apenas consultas SELECT são permitidas.')
+            return
+
+        descricao = input('Descrição breve da consulta: ').strip()
+        try:
+            cons = ConsultaSQL(sql=sql, descricao=descricao)
+            sess.add(cons)
+            sess.commit()
+
+            df = pd.read_sql_query(sql, con=engine)
+            linhas, colunas = df.shape
+            timestamp = int(time.time())
+            filename = f'consulta_{cons.id}_{timestamp}.xlsx'
+            path = os.path.join(RESULT_CONSULTA_DIR, filename)
+            df.to_excel(path, index=False)
+
+            resultado = ResultadoConsulta(
+                consulta_id=cons.id,
+                caminho_arquivo=path,
+                dados_json=json.loads(df.to_json(orient='records')),
+                linhas=linhas,
+                colunas=colunas
+            )
+            sess.add(resultado)
+            sess.commit()
+
+            print(f'\n[OK] Consulta {cons.id} executada com sucesso!')
+            print(f'[INFO] {linhas} linhas × {colunas} colunas retornadas.')
+            print(f'[RESULTADO] Salvo em: {path}\n')
+
+        except Exception as e:
+            print(f'[ERRO] Falha ao executar consulta: {e}')
+
+
 def menu():
     while True:
         try:
@@ -639,123 +812,23 @@ def menu():
             return
 
         if op == '1':
-            print(create_all())
-
+            handle_create_tables()
         elif op == '2':
-            conf = input('Tem certeza? (digite SIM): ').strip().upper()
-            if conf == 'SIM':
-                print(drop_all())
-        
+            handle_remove_tables()
         elif op == '3':
-            try:
-                arquivo_id = int(input('ID do arquivo: '))
-            except ValueError:
-                print('ID inválido')
-                continue
-            conf = input('Tem certeza (digite SIM)? ').strip().upper()
-            if conf == 'SIM':
-                with SessionLocal() as sess:
-                    try:
-                        print(remove_file(sess, arquivo_id))
-                    except ValueError:
-                        print('ID inválido!')
+            handle_remove_file()
         elif op == '4':
-            path = input('Caminho do arquivo: ').strip().strip('"')
-            if not os.path.isfile(path):
-                print('[ERRO] Arquivo não encontrado.')
-                continue
-            with SessionLocal() as sess:
-                print(upload_file(sess, path))
-
+            handle_upload_file()
         elif op == '5':
-            try:
-                arquivo_id = int(input('ID do arquivo: '))
-            except ValueError:
-                print('ID inválido!')
-                continue
-
-            pergunta = input('Pergunta: [voltar retorna ao menu] ')
-            while pergunta != 'voltar':
-                with SessionLocal() as sess:
-                    try:
-                        resp = answer_question(sess, arquivo_id, pergunta)
-                        print('\n===== RESPOSTA IA =====\n' + resp + '\n=======================\n')
-                    except Exception as e:
-                        print(f'[ERRO] {e}')
-                pergunta = input('Pergunta: [voltar retorna ao menu] ')
-
+            handle_ask_file()
         elif op == '6':
-            print("\n[INFO] Executando consultas e gerando gráficos prontos...")
-
-            sql1 = '''
-                SELECT t.nome AS tipo, COUNT(a.id) AS qtde
-                FROM tipo_arquivo t
-                LEFT JOIN arquivo a ON a.tipo_id = t.id
-                GROUP BY t.nome ORDER BY qtde DESC
-            '''
-            run_and_plot("Quantidade de arquivos x tipo", "Tipo", "Quantidade", sql1, "Arquivos por tipo", "barras")
-
-            sql2 = '''
-                SELECT a.nome AS arquivo, COUNT(p.id) AS perguntas
-                FROM arquivo a
-                LEFT JOIN pergunta p ON p.arquivo_id = a.id
-                GROUP BY a.nome ORDER BY perguntas DESC
-            '''
-            run_and_plot("Perguntas x arquivo", "Arquivo", "Nº perguntas", sql2, "Perguntas por arquivo", "barras")
-
-            sql3 = '''
-                SELECT t.nome AS tipo, COALESCE(AVG(r.tempo_execucao),0) AS tempo_medio_s
-                FROM tipo_arquivo t
-                LEFT JOIN arquivo a ON a.tipo_id = t.id
-                LEFT JOIN pergunta p ON p.arquivo_id = a.id
-                LEFT JOIN resposta_ia r ON r.pergunta_id = p.id
-                GROUP BY t.nome ORDER BY tempo_medio_s DESC
-            '''
-            run_and_plot("Tempo médio de resposta x tipo", "Tipo", "Tempo (s)", sql3, "Tempo médio de resposta", "linhas")
-            print("\n[OK] Consultas e gráficos concluídos.\n")
-
+            handle_ready_graphs()
         elif op == '7':
-            with SessionLocal() as sess:
-                sql = input('SQL (apenas SELECT): ').strip()
-                if not sql.lower().startswith('select'):
-                    print('[ERRO] Apenas consultas SELECT são permitidas.')
-                    continue
-
-                descricao = input('Descrição breve da consulta: ').strip()
-                try:
-                    cons = ConsultaSQL(sql=sql, descricao=descricao)
-                    sess.add(cons)
-                    sess.commit()
-
-                    df = pd.read_sql_query(sql, con=engine)
-                    linhas, colunas = df.shape
-                    timestamp = int(time.time())
-                    filename = f'consulta_{cons.id}_{timestamp}.xlsx'
-                    path = os.path.join(RESULT_CONSULTA_DIR, filename)
-                    df.to_excel(path, index=False)
-
-                    resultado = ResultadoConsulta(
-                        consulta_id=cons.id,
-                        caminho_arquivo=path,
-                        dados_json=json.loads(df.to_json(orient='records')),
-                        linhas=linhas,
-                        colunas=colunas
-                    )
-                    sess.add(resultado)
-                    sess.commit()
-
-                    print(f'\n[OK] Consulta {cons.id} executada com sucesso!')
-                    print(f'[INFO] {linhas} linhas × {colunas} colunas retornadas.')
-                    print(f'[RESULTADO] Salvo em: {path}\n')
-
-                except Exception as e:
-                    print(f'[ERRO] Falha ao executar consulta: {e}')
-
+            handle_custom_sql()
         elif op == '0':
             print('Até mais!')
             cleanup_indices()
             break
-
         else:
             print('Opção inválida.')
 

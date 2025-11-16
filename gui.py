@@ -16,7 +16,6 @@ janela.configure(bg='#f5f6f7')
 janela.state('zoomed')
 janela.resizable(True, True)
 
-
 style = ttk.Style()
 style.theme_use('clam')
 
@@ -38,7 +37,7 @@ frame_menu.pack(side='right', fill='y', padx=(0, 20), pady=20)
 
 try:
     image_path = './img/logo.png'
-    img = Image.open(image_path).resize((190, 160))
+    img = Image.open(image_path).resize((190, 190))
     img_tk = ImageTk.PhotoImage(img)
     lbl_logo = ttk.Label(frame_menu, image=img_tk, background='#f5f6f7')
     lbl_logo.image = img_tk
@@ -58,28 +57,31 @@ canvas.pack(side='left', fill='both', expand=True)
 frame_mensagens = tk.Frame(canvas, bg='white')
 canvas.create_window((0, 0), window=frame_mensagens, anchor='nw')
 
-caminhos = ['charts', 'consultas', 'indices_faiss']
 
 def atualizar_scroll(event=None):
     canvas.configure(scrollregion=canvas.bbox('all'))
+
+
 frame_mensagens.bind('<Configure>', atualizar_scroll)
+
 
 def _rounded_rect(canvas_obj, x1, y1, x2, y2, r=12, **kwargs):
     pontos = [
-        x1+r, y1,
-        x2-r, y1,
+        x1 + r, y1,
+        x2 - r, y1,
         x2, y1,
-        x2, y1+r,
-        x2, y2-r,
+        x2, y1 + r,
+        x2, y2 - r,
         x2, y2,
-        x2-r, y2,
-        x1+r, y2,
+        x2 - r, y2,
+        x1 + r, y2,
         x1, y2,
-        x1, y2-r,
-        x1, y1+r,
+        x1, y2 - r,
+        x1, y1 + r,
         x1, y1
     ]
     return canvas_obj.create_polygon(pontos, smooth=True, **kwargs)
+
 
 def md_to_html(md_text: str) -> str:
     html_body = markdown2.markdown(
@@ -106,6 +108,7 @@ def md_to_html(md_text: str) -> str:
     </style>
     """
     return f"<!doctype html><html><head>{style}</head><body>{html_body}</body></html>"
+
 
 def exibir_mensagem(remetente, texto, cor=None):
     largura_msg = max(frame_chat.winfo_width() - 140, 520)
@@ -153,7 +156,7 @@ def exibir_mensagem(remetente, texto, cor=None):
     max_width = largura_msg
 
     if remetente == 'IA':
-        html = md_to_html(texto)  
+        html = md_to_html(texto)
         content = HtmlFrame(inner, horizontal_scrollbar="auto")
         content.load_html(html)
         content.pack(fill='both', expand=True, padx=pad_int, pady=pad_int)
@@ -187,38 +190,45 @@ def exibir_mensagem(remetente, texto, cor=None):
         c.update_idletasks()
         inner.update_idletasks()
 
-        h = max(inner.winfo_reqheight(), content.winfo_reqheight() + 2*pad_int if remetente == 'IA' else inner.winfo_reqheight())
+        h = max(
+            inner.winfo_reqheight(),
+            content.winfo_reqheight() + 2 * pad_int if remetente == 'IA' else inner.winfo_reqheight()
+        )
         c.config(height=h)
 
         c.coords(window_id, 0, 0)
         c.delete('bubble')
-        _rounded_rect(c, 1, 1, w-1, h-1, r=14, fill=cor_bg, outline=cor_borda, width=1.5, tags='bubble')
+        _rounded_rect(c, 1, 1, w - 1, h - 1, r=14, fill=cor_bg, outline=cor_borda, width=1.5, tags='bubble')
         c.tag_lower('bubble')
 
         frame_mensagens.update_idletasks()
         canvas.configure(scrollregion=canvas.bbox('all'))
         canvas.yview_moveto(1.0)
 
-
     ajustar()
     wrap.after(50, ajustar)
 
+
 exibir_mensagem('Sistema', '[OK] Interface inicializada com sucesso!')
+
 
 def criar_tabelas():
     try:
         msg = m.create_all()
         exibir_mensagem('Sistema', msg)
-        messagebox.showinfo('Sucesso', msg)
+        messagebox.showinfo('INFO', msg)
     except Exception as e:
         exibir_mensagem('Erro', str(e))
         messagebox.showerror('Erro', str(e))
 
+
 def remover_tabelas():
-    if not m.verificar_banco():
-        msg = 'Não é possível remover as tabelas, porque o banco ainda não existe. Clique no botão "Criar tabelas" para criar o banco.'
+    if not m.verificar_banco() or not m.verificar_tabelas():
+        msg = 'Não é possível remover as tabelas, porque elas ainda não existem. Clique em "Criar tabelas" primeiro.'
         exibir_mensagem('Sistema', msg)
-        return messagebox.showerror('ERRO', msg)
+        messagebox.showinfo('Aviso', msg)
+        return
+
     conf = messagebox.askyesno('Confirmação', 'Tem certeza que deseja remover todas as tabelas e pastas?')
     if not conf:
         return messagebox.showerror('ERRO', 'Ação cancelada pelo usuário.')
@@ -234,10 +244,11 @@ def remover_tabelas():
         exibir_mensagem('Erro', str(e))
         messagebox.showerror('Erro', str(e))
 
+
 def upload_arquivo():
-    if not m.verificar_banco():
-        msg = 'Não é possível fazer upload de arquivos, porque o banco ainda não existe. Clique no botão "Criar tabelas" para criar o banco.'
-        exibir_mensagem('Erro', msg)
+    if not m.verificar_banco() or not m.verificar_tabelas():
+        msg = 'Não é possível fazer upload de arquivos, porque o banco ainda não foi inicializado. Clique em "Criar tabelas" primeiro.'
+        exibir_mensagem('Sistema', msg)
         messagebox.showerror('Erro', msg)
         return
 
@@ -291,12 +302,14 @@ def upload_arquivo():
         exibir_mensagem('Erro', str(e))
         messagebox.showerror('Erro', str(e))
 
+
 id_arquivo_escolhido = None
 
+
 def perguntar_arquivo():
-    if not m.verificar_banco():
-        msg = 'Não é possível perguntar sobre arquivos, porque o banco ainda não existe. Clique no botão "Criar tabelas" para criar o banco.'
-        exibir_mensagem('Erro', msg)
+    if not m.verificar_banco() or not m.verificar_tabelas():
+        msg = 'Não é possível perguntar sobre arquivos, porque o banco ainda não foi inicializado. Clique em "Criar tabelas" primeiro.'
+        exibir_mensagem('Sistema', msg)
         messagebox.showerror('Erro', msg)
         return
 
@@ -336,6 +349,7 @@ def perguntar_arquivo():
 
     ttk.Button(janela_id, text='Confirmar', style='Custom.TButton', command=confirmar).pack(pady=10)
 
+
 def enviar_pergunta():
     global id_arquivo_escolhido
     pergunta = entry_enviar.get().strip()
@@ -354,13 +368,14 @@ def enviar_pergunta():
         exibir_mensagem('Erro', str(e))
         messagebox.showerror('Erro', str(e))
 
+
 def graficos_prontos():
-    if not m.verificar_banco():
-        msg = 'Não é possível gerar os gráficos prontos, porque o banco ainda não existe. Clique no botão "Criar tabelas" para criar o banco.'
-        exibir_mensagem('Erro', msg)
+    if not m.verificar_banco() or not m.verificar_tabelas():
+        msg = 'Não é possível gerar gráficos, porque o banco ainda não foi inicializado. Clique em "Criar tabelas" primeiro.'
+        exibir_mensagem('Sistema', msg)
         messagebox.showerror('Erro', msg)
         return
-    
+
     try:
         df = pd.read_sql_query('SELECT id, nome FROM arquivo ORDER BY id DESC', con=m.engine)
     except Exception as e:
@@ -424,27 +439,32 @@ def graficos_prontos():
         exibir_mensagem('Erro', str(e))
         messagebox.showerror('Erro', str(e))
 
+
 def consulta_sql():
-    if not m.verificar_banco():
-        msg = 'Não é possível executar consultas, porque as tabelas do banco estão vazias. Faça upload de novos arquivos para fazer fazer perguntas.'
-        exibir_mensagem('Erro', msg)
-        return messagebox.showerror('Erro', msg)
+    if not m.verificar_banco() or not m.verificar_tabelas():
+        msg = 'Não é possível executar consultas, porque o banco ainda não foi inicializado. Clique em "Criar tabelas" primeiro.'
+        exibir_mensagem('Sistema', msg)
+        messagebox.showerror('Erro', msg)
+        return
     try:
-        df = pd.read_sql_query('''SELECT a.id as id,
+        df = pd.read_sql_query(
+            '''SELECT a.id as id,
                                 a.nome as nome
                                 FROM arquivo a
-                                ORDER BY nome''', con=m.engine)
+                                ORDER BY nome''',
+            con=m.engine
+        )
         if df.empty:
             return messagebox.showerror('ERRO', 'Nenhum arquivo disponível para consulta.')
     except Exception as e:
         return messagebox.showerror('Erro', f'Falha ao buscar arquivos: {e}')
-        
+
     janela_sql = tk.Toplevel(janela)
     janela_sql.title('Consulta SQL customizada')
     janela_sql.geometry('600x450')
     janela_sql.transient(janela)
     janela_sql.grab_set()
-    
+
     ttk.Label(janela_sql, text='Digite uma consulta SELECT:').pack(pady=10)
     entry_sql = tk.Text(janela_sql, height=15, width=80, font=('Consolas', 10))
     entry_sql.pack(padx=10, fill='both', expand=True)
@@ -455,13 +475,13 @@ def consulta_sql():
             messagebox.showwarning('Erro', 'Apenas consultas SELECT são permitidas.')
             return
         try:
-            df = pd.read_sql_query(sql, con=m.engine)
-            if df.empty:
+            df_res = pd.read_sql_query(sql, con=m.engine)
+            if df_res.empty:
                 exibir_mensagem('Sistema', 'Nenhum resultado retornado.')
                 messagebox.showinfo('Aviso', 'Nenhum resultado retornado.')
                 return
             path = os.path.join('consultas', f'consulta_{int(time.time())}.xlsx')
-            df.to_excel(path, index=False)
+            df_res.to_excel(path, index=False)
             exibir_mensagem('Sistema', f'Consulta executada com sucesso. Resultado salvo em {path}')
             messagebox.showinfo('Sucesso', f'Resultado salvo em:\n{path}')
         except Exception as e:
@@ -470,22 +490,26 @@ def consulta_sql():
 
     ttk.Button(janela_sql, text='Executar', style='Custom.TButton', command=executar).pack(pady=10)
 
+
 def remover_arquivo():
-    if not m.verificar_banco():
-        msg = 'Não é possível remover arquivos, porque o banco ainda não existe. Clique no botão "Criar tabelas" para criar o banco.'
-        exibir_mensagem('Erro', msg)
+    if not m.verificar_banco() or not m.verificar_tabelas():
+        msg = 'Não é possível remover arquivos, porque o banco ainda não foi inicializado. Clique em "Criar tabelas" primeiro.'
+        exibir_mensagem('Sistema', msg)
         messagebox.showerror('Erro', msg)
         return
     try:
-        df = pd.read_sql_query('''SELECT a.id as id,
+        df = pd.read_sql_query(
+            '''SELECT a.id as id,
                                 a.nome as nome
                                 FROM arquivo a
-                                ORDER BY nome''', con=m.engine)
+                                ORDER BY nome''',
+            con=m.engine
+        )
         if df.empty:
             return messagebox.showerror('ERRO', 'Nenhum arquivo disponível para remoção.')
     except Exception as e:
         return messagebox.showerror('Erro', f'Falha ao buscar arquivos: {e}')
-    
+
     janela_remover = tk.Toplevel(janela)
     janela_remover.title('Remover arquivo')
     janela_remover.geometry('380x200')
@@ -518,25 +542,23 @@ def remover_arquivo():
 
     ttk.Button(janela_remover, text='Remover', style='Custom.TButton', command=confirmar_remocao).pack(pady=15)
 
+
 def listar_arquivos():
-    if not m.verificar_banco():
-        msg = 'Não é possível listar os arquivos, porque o banco ainda não existe. Clique no botão "Criar tabelas" para criar o banco.'
-        exibir_mensagem('Erro', msg)
+    if not m.verificar_banco() or not m.verificar_tabelas():
+        msg = 'Não é possível listar arquivos, porque o banco ainda não foi inicializado. Clique em "Criar tabelas" primeiro.'
+        exibir_mensagem('Sistema', msg)
         messagebox.showerror('Erro', msg)
         return
 
-    if not m.verificar_tabelas():
-        msg = 'Não é possível listar os arquivos, porque as tabelas estão vazias. Faça upload de novos arquivos primeiro.'
-        exibir_mensagem('Erro', msg)
-        messagebox.showerror('Erro', msg)
-        return
-    
     try:
-        df_arquivos = pd.read_sql_query('''
+        df_arquivos = pd.read_sql_query(
+            '''
             SELECT a.id, a.nome
-            FROM arquivo a  
+            FROM arquivo a
             ORDER BY a.id
-        ''', m.engine)
+        ''',
+            m.engine
+        )
         lista_arquivos_ids = df_arquivos['id'].tolist()
         lista_arquivos_nomes = df_arquivos['nome'].tolist()
         arquivos = '\n'.join(f'ID: {id} | Nome: {nome}' for id, nome in zip(lista_arquivos_ids, lista_arquivos_nomes))
@@ -546,13 +568,15 @@ def listar_arquivos():
         exibir_mensagem('Erro', str(e))
         messagebox.showerror('Erro', str(e))
         return
-    
+
     messagebox.showinfo('Lista de Arquivos', arquivos)
 
+
 def sair():
-    sair = messagebox.askyesno('SAIR', 'Tem certeza que deseja sair?')
-    if sair:
+    sair_resp = messagebox.askyesno('SAIR', 'Tem certeza que deseja sair?')
+    if sair_resp:
         janela.destroy()
+
 
 botoes = {
     'Criar tabelas': criar_tabelas,
