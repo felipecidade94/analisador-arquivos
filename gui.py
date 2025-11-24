@@ -97,14 +97,14 @@ def md_to_html(md_text: str) -> str:
     )
     style = """
     <style>
-      body { font-family: 'Segoe UI', sans-serif; color: #222; }
-      p { margin: 0.5em 0; }
-      pre, code { font-family: Consolas, Menlo, monospace; }
-      pre { background:#f5f5f5; padding:10px; border-radius:8px; overflow:auto; }
-      table { border-collapse: collapse; width: 100%; margin: 8px 0; }
-      th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
-      h1, h2, h3, h4 { margin: 0.4em 0 0.2em; }
-      a { text-decoration: none; }
+        body { font-family: 'Segoe UI', sans-serif; color: #222; }
+        p { margin: 0.5em 0; }
+        pre, code { font-family: Consolas, Menlo, monospace; }
+        pre { background:#f5f5f5; padding:10px; border-radius:8px; overflow:auto; }
+        table { border-collapse: collapse; width: 100%; margin: 8px 0; }
+        th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; }
+        h1, h2, h3, h4 { margin: 0.4em 0 0.2em; }
+        a { text-decoration: none; }
     </style>
     """
     return f"<!doctype html><html><head>{style}</head><body>{html_body}</body></html>"
@@ -602,4 +602,7 @@ entry_enviar.pack(side='left', fill='x', expand=True, padx=(0, 5))
 ttk.Button(frame_entry, text='Enviar', style='Custom.TButton', command=enviar_pergunta).pack(side='right')
 
 janela.bind('<Return>', lambda e: enviar_pergunta())
-janela.mainloop()
+
+
+if __name__ == '__main__':
+    janela.mainloop()
